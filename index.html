@@ -200,6 +200,10 @@ th:nth-child(-n+2), td:nth-child(-n+2) { text-align: left; }
 #model-table tbody tr:hover { background: var(--surface-2); }
 #model-table tbody tr.sel { background: var(--accent-soft); }
 #model-table input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; vertical-align: middle; }
+#model-table td.pick { display: flex; align-items: center; gap: 4px; }
+.fav { border: 0; background: none; cursor: pointer; font-size: 1.05rem; line-height: 1; padding: 2px 4px; border-radius: 4px; color: var(--muted); }
+.fav:hover { color: var(--s4); background: var(--surface-2); }
+.fav[aria-pressed="true"] { color: var(--s4); }
 td .swatch, .ficha .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: middle; }
 td.label { font-family: var(--font-mono); font-size: .82rem; }
 .status { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
@@ -477,6 +481,14 @@ window.addEventListener("error", function (e) {
 <script src="manifest.js"></script>
 <script>
 "use strict";
+
+// ================= configuration =================
+// Favorite model per dataset: it opens pre-selected and gets a star, for everyone who opens the page.
+// Keys are dataset ids (as in manifest.js), values are run folder names. The star buttons in the page
+// override this only in the viewer's own browser.
+const DEFAULT_FAVORITES = {
+  "ml-1m_tmdb": "L3_K32_D32_H512-256-128_beta0.25",
+};
 
 // ================= helpers =================
 const fmt = (x, d = 3) => x == null || Number.isNaN(x) ? "–" : Number(x).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -838,7 +850,15 @@ function prepareDataset(id, raw) {
       bestRecon: m.best_val_recon <= bestRecon + 1e-9,
     };
   }
-  return { id, meta: raw.meta, N, items: raw.items, runs, K_NN: raw.meta.n_neighbors, neighbors: raw.neighbors, sims: raw.neighbor_sims, index: null };
+  const ds = { id, meta: raw.meta, N, items: raw.items, runs, K_NN: raw.meta.n_neighbors, neighbors: raw.neighbors, sims: raw.neighbor_sims, index: null };
+  // the viewer's own choice (this browser) wins over DEFAULT_FAVORITES
+  const mine = store.get().favorites || {};
+  setFavorite(ds, id in mine ? mine[id] : DEFAULT_FAVORITES[id]);
+  return ds;
+}
+
+function setFavorite(ds, name) {
+  ds.favorite = ds.runs.some(r => r.name === name) ? name : null;
 }
 
 // ================= state =================
@@ -880,6 +900,26 @@ function toggleRun(name) {
   saveSelection();
   renderEval();
 }
+function toggleFavorite(name) {
+  const ds = state.ds;
+  setFavorite(ds, ds.favorite === name ? null : name);
+  const mine = store.get().favorites || {};
+  mine[ds.id] = ds.favorite;
+  store.set({ favorites: mine });
+  if (ds.favorite && !state.selected.includes(ds.favorite)) {
+    if (state.selected.length >= MAX_SEL) {  // make room: the favorite always stays selected
+      const drop = state.selected[state.selected.length - 1];
+      state.selected.pop();
+      state.slots.delete(drop);
+    }
+    toggleRun(ds.favorite);
+  } else {
+    renderEval();
+  }
+}
+// favorite first, then the others, without duplicates
+const withFavorite = names => [...new Set([state.ds.favorite, ...names].filter(Boolean))];
+
 function setSelection(names) {
   state.selected = [];
   state.slots = new Map();
@@ -1230,7 +1270,8 @@ function renderModelTable() {
   }).join("")}</tr></thead>`;
   const body = rows.map(r => {
     const sel = state.selected.includes(r.name);
-    return `<tr data-run="${esc(r.name)}" class="${sel ? "sel" : ""}" title="${esc(r.name)}"><td><input type="checkbox" ${sel ? "checked" : ""} aria-label="Selecionar ${esc(r.label)}"></td>${TABLE_COLS.map(c => `<td class="num ${c.cls || ""}">${c.cell(r)}</td>`).join("")}</tr>`;
+    const fav = r.name === state.ds.favorite;
+    return `<tr data-run="${esc(r.name)}" class="${sel ? "sel" : ""}" title="${esc(r.name)}"><td class="pick"><input type="checkbox" ${sel ? "checked" : ""} aria-label="Selecionar ${esc(r.label)}"><button type="button" class="fav" data-fav="${esc(r.name)}" aria-pressed="${fav}" aria-label="${fav ? "Remover dos favoritos" : "Marcar como favorito"}" data-tip="${fav ? "Favorito: abre sempre selecionado. Clique para desmarcar." : "Marcar como favorito: este modelo passa a abrir sempre selecionado."}">${fav ? "★" : "☆"}</button></td>${TABLE_COLS.map(c => `<td class="num ${c.cls || ""}">${c.cell(r)}</td>`).join("")}</tr>`;
   }).join("") || `<tr><td colspan="${TABLE_COLS.length + 1}" class="muted" style="text-align:center">Nenhum modelo corresponde ao filtro.</td></tr>`;
   $("model-table").innerHTML = head + `<tbody>${body}</tbody>`;
   $("sel-count").textContent = `${state.selected.length} de ${MAX_SEL} selecionados · ${plural(ds.runs.length, "modelo")} no dataset`;
@@ -1562,7 +1603,7 @@ function setupSearch() {
 
 function renderExplore() {
   const ds = state.ds;
-  if (!state.exploreRun || !runByName(state.exploreRun)) state.exploreRun = state.selected[0] || ds.runs[0].name;
+  if (!state.exploreRun || !runByName(state.exploreRun)) state.exploreRun = ds.favorite || state.selected[0] || ds.runs[0].name;
   const r = ensureGroups(exRun(), ds.N);
   ensureIndex(ds);
   const valid = [];
@@ -1625,8 +1666,7 @@ async function selectDataset(id) {
   store.set({ dataset: entry.id });
   const saved = (store.get().selection || {})[entry.id];
   const valid = (saved || []).filter(n => state.ds.runs.some(r => r.name === n));
-  if (valid.length) setSelection(valid);
-  else setSelection([...new Set(highlightsOf(state.ds).map(h => h.r.name))]);
+  setSelection(withFavorite(valid.length ? valid : highlightsOf(state.ds).map(h => h.r.name)));
   state.exploreRun = null;
   state.treePrefix = [];
   state.currentMovie = null;
@@ -1657,6 +1697,8 @@ function setupEvents() {
       renderModelTable();
       return;
     }
+    const fav = e.target.closest("[data-fav]");
+    if (fav) { toggleFavorite(fav.dataset.fav); return; }
     const tr = e.target.closest("tr[data-run]");
     if (tr) toggleRun(tr.dataset.run);
   });
@@ -1666,7 +1708,7 @@ function setupEvents() {
   });
   $("model-filter").addEventListener("input", e => { state.filter = e.target.value; renderModelTable(); });
   $("sel-clear").addEventListener("click", () => { setSelection([]); renderEval(); });
-  $("sel-suggested").addEventListener("click", () => { setSelection([...new Set(highlightsOf(state.ds).map(h => h.r.name))]); renderEval(); });
+  $("sel-suggested").addEventListener("click", () => { setSelection(withFavorite(highlightsOf(state.ds).map(h => h.r.name))); renderEval(); });
   $("sel-chips").addEventListener("click", e => { const b = e.target.closest("[data-unselect]"); if (b) toggleRun(b.dataset.unselect); });
   $("highlights").addEventListener("click", e => {
     const b = e.target.closest("[data-pick]");
