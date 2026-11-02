@@ -1,0 +1,1715 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Semantic IDs MovieLens</title>
+<style>
+/* Layout: two tabs under one header. "Avaliação" is a scrolling report (model table on top, then sections
+   whose cards all share one anatomy: what / chart / how to read / your models / how it's computed).
+   "Exploração" is a one-screen tool with two independent panes. Models keep one color slot while selected. */
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #eceef2;
+  --line: #dcdfe5;
+  --fg: #14171d;
+  --fg-2: #4a5160;
+  --muted: #767d8c;
+  --accent: #1f5fbf;
+  --accent-soft: #e3ebf8;
+  /* categorical slots for models, fixed order (validated reference palette) */
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  /* SID levels in the explorer */
+  --l0: #2a78d6; --l1: #eb6834; --l2: #1baf7a; --l3: #6250d6; --l4: #e87ba4; --l5: #e34948;
+  --good: #1a7f37; --warn: #9a5b00; --bad: #c2372f;
+  --good-soft: #e3f3e7; --warn-soft: #fbefdc; --bad-soft: #fae4e2;
+  --font-body: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 8px;
+  --header-h: 56px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101216; --surface: #181b21; --surface-2: #21252d; --line: #2d323c;
+    --fg: #eceef2; --fg-2: #b6bcc8; --muted: #8a91a0;
+    --accent: #6ea3f0; --accent-soft: #1c2940;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --l0: #3987e5; --l1: #d95926; --l2: #199e70; --l3: #9085e9; --l4: #d55181; --l5: #e66767;
+    --good: #4cc26a; --warn: #e0a43a; --bad: #f0675f;
+    --good-soft: #16301e; --warn-soft: #33270f; --bad-soft: #3a1c1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101216; --surface: #181b21; --surface-2: #21252d; --line: #2d323c;
+  --fg: #eceef2; --fg-2: #b6bcc8; --muted: #8a91a0;
+  --accent: #6ea3f0; --accent-soft: #1c2940;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --l0: #3987e5; --l1: #d95926; --l2: #199e70; --l3: #9085e9; --l4: #d55181; --l5: #e66767;
+  --good: #4cc26a; --warn: #e0a43a; --bad: #f0675f;
+  --good-soft: #16301e; --warn-soft: #33270f; --bad-soft: #3a1c1a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-padding-top: calc(var(--header-h) + 56px); }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 var(--font-body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+h1, h2, h3, h4 { margin: 0; line-height: 1.25; text-wrap: balance; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1rem; }
+p { margin: 0; }
+ul { margin: 0; }
+button, input, select { font: inherit; color: var(--fg); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--font-mono); font-size: .86em; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.small { font-size: .84rem; }
+.wrap { max-width: 1280px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+
+/* banners */
+#fatal { display: none; background: var(--bad-soft); color: var(--bad); border-bottom: 1px solid var(--bad); padding: 12px 16px; }
+#fatal.show { display: block; }
+#fatal pre { white-space: pre-wrap; margin: 6px 0 0; font-family: var(--font-mono); font-size: .8rem; }
+#loading { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 80%, transparent); }
+#loading .box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 22px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+
+/* header */
+.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; background: var(--surface); border-bottom: 1px solid var(--line); }
+.topbar .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding-block: 9px; }
+.brand { font-weight: 700; font-size: 1.02rem; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { background: var(--surface); border: 0; padding: 4px 12px; cursor: pointer; font-size: .86rem; display: grid; line-height: 1.2; text-align: left; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button:hover { background: var(--surface-2); }
+.seg button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); }
+.seg button small { font-size: .72rem; opacity: .8; }
+.tabs { display: inline-flex; gap: 6px; }
+.tabs button {
+  border: 1.5px solid var(--line); background: var(--surface); border-radius: 8px; padding: 7px 22px;
+  cursor: pointer; font-weight: 700; font-size: 1rem; color: var(--fg-2);
+}
+.tabs button:hover { border-color: var(--accent); color: var(--fg); }
+.tabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.facts { margin-left: auto; display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: .82rem; color: var(--muted); }
+.facts b { color: var(--fg); font-weight: 600; }
+
+/* tooltips */
+#tip {
+  position: fixed; z-index: 40; pointer-events: none; max-width: 360px;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 11px; font-size: .82rem; line-height: 1.45; box-shadow: 0 6px 22px rgba(0,0,0,.2);
+}
+#tip[hidden] { display: none; }
+#tip .t { font-weight: 600; margin-bottom: 3px; color: var(--fg-2); }
+#tip .row { display: grid; grid-template-columns: 16px auto 1fr; gap: 6px; align-items: center; }
+#tip .row b { font-variant-numeric: tabular-nums; }
+#tip .row span { color: var(--fg-2); }
+#tip p + p { margin-top: 5px; }
+#tip .lbl { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.key { display: inline-block; width: 14px; height: 0; border-top: 2.5px solid var(--c); vertical-align: middle; }
+.key.dash { border-top-style: dashed; }
+.key.dot { width: 10px; height: 10px; border: 0; border-radius: 50%; background: var(--c); }
+.info {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--fg-2);
+  font: 600 11px/1 var(--font-body); cursor: help; padding: 0; vertical-align: middle; margin-left: 4px;
+}
+.info:hover, .info:focus-visible { border-color: var(--accent); color: var(--accent); }
+[data-tip]:not(.info):not(button) { cursor: help; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+th [data-tip] { text-decoration: none; }
+
+/* ===== evaluation ===== */
+.subbar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--header-h)); z-index: 7; background: var(--bg); border-bottom: 1px solid var(--line); }
+.subbar .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding-block: 7px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: .84rem; font-family: var(--font-mono); }
+.chip .key { border-top-width: 3px; }
+.chip button { border: 0; background: none; cursor: pointer; color: var(--muted); border-radius: 50%; width: 20px; height: 20px; line-height: 1; }
+.chip button:hover { background: var(--surface-2); color: var(--fg); }
+.secnav { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: .86rem; }
+.secnav a { color: var(--fg-2); text-decoration: none; }
+.secnav a:hover { color: var(--accent); }
+
+.eval-section { padding-block: 26px; display: grid; gap: 14px; border-top: 1px solid var(--line); }
+.eval-section:first-child { border-top: 0; }
+.sec-head { display: grid; gap: 4px; max-width: 80ch; }
+.sec-head p { color: var(--fg-2); }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.cards.one { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 960px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 18px 14px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.card .what { color: var(--muted); font-size: .86rem; }
+.card .howto { font-size: .86rem; color: var(--fg-2); }
+.card .howto b { color: var(--fg); font-weight: 600; }
+.reading { border-left: 2px solid var(--accent); padding: 1px 0 1px 10px; font-size: .86rem; color: var(--fg-2); }
+.reading ul { padding-left: 0; list-style: none; display: grid; gap: 2px; }
+.reading b { color: var(--fg); font-weight: 600; }
+.calc { font-size: .84rem; color: var(--fg-2); }
+.calc summary { cursor: pointer; color: var(--muted); font-size: .82rem; }
+.calc summary:hover { color: var(--accent); }
+.calc p { margin-top: 6px; }
+.calc code, .formula { font-family: var(--font-mono); font-size: .82rem; background: var(--surface-2); border-radius: 4px; padding: 1px 5px; }
+.legend { display: flex; flex-wrap: wrap; gap: 3px 14px; font-size: .8rem; color: var(--fg-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); }
+.focus-pick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .84rem; color: var(--fg-2); }
+.focus-pick button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 1px 10px; cursor: pointer; font-family: var(--font-mono); font-size: .8rem; display: inline-flex; gap: 6px; align-items: center; }
+.focus-pick button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.empty-state { color: var(--muted); padding: 18px; text-align: center; border: 1px dashed var(--line); border-radius: var(--radius); }
+
+/* svg charts */
+.chart { position: relative; min-height: 120px; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart text { fill: var(--muted); font-size: 11px; font-family: var(--font-body); }
+.chart text.lab { fill: var(--fg-2); font-size: 11.5px; font-family: var(--font-mono); }
+.chart text.ttl { fill: var(--fg-2); }
+.chart .grid { stroke: var(--line); stroke-width: 1; opacity: .6; }
+.chart .axis { stroke: var(--muted); stroke-width: 1; opacity: .5; }
+.chart .ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.chart .guide-line { stroke: var(--muted); stroke-width: 1; }
+.chart .hit { fill: transparent; cursor: pointer; }
+.chart .hit:focus { outline: none; }
+.chart .hit:focus-visible { stroke: var(--accent); stroke-width: 2; }
+
+/* model table */
+.table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+input[type="search"] { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-width: 0; }
+#model-filter { width: min(320px, 100%); }
+.btn { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: .86rem; }
+.btn:hover { border-color: var(--accent); }
+.note { font-size: .86rem; color: var(--warn); background: var(--warn-soft); padding: 6px 10px; border-radius: 6px; }
+.table-scroll { overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.table-scroll.models { max-height: 380px; }
+table { border-collapse: collapse; width: 100%; font-size: .86rem; }
+th, td { padding: 7px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; color: var(--fg-2); background: var(--surface-2); position: sticky; top: 0; z-index: 1; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--fg); }
+th .arrow { color: var(--accent); margin-left: 3px; }
+th:nth-child(-n+2), td:nth-child(-n+2) { text-align: left; }
+#model-table tbody tr { cursor: pointer; }
+#model-table tbody tr:hover { background: var(--surface-2); }
+#model-table tbody tr.sel { background: var(--accent-soft); }
+#model-table input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; vertical-align: middle; }
+td .swatch, .ficha .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: middle; }
+td.label { font-family: var(--font-mono); font-size: .82rem; }
+.status { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.status.ok { color: var(--good); }
+.status.warn { color: var(--warn); }
+.status.bad { color: var(--bad); }
+
+/* highlights + fichas */
+.highlights { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.hl { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: grid; gap: 2px; text-align: left; cursor: pointer; }
+.hl:hover { border-color: var(--accent); }
+.hl .k { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+.hl .v { font-family: var(--font-mono); font-weight: 600; }
+.hl .d { font-size: .82rem; color: var(--fg-2); }
+.fichas { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 14px; }
+.ficha { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--c); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 10px; align-content: start; }
+.ficha header { display: grid; gap: 1px; }
+.ficha h3 { font-family: var(--font-mono); font-size: .98rem; }
+.ficha dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; margin: 0; }
+.ficha dt { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.ficha dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pc { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; font-size: .87rem; }
+.pc h4 { font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
+.pc .pro h4 { color: var(--good); }
+.pc .con h4 { color: var(--bad); }
+.pc ul { padding-left: 18px; display: grid; gap: 3px; }
+.when { font-size: .88rem; background: var(--surface-2); border-radius: 6px; padding: 7px 10px; }
+
+/* ===== exploration ===== */
+.explore { display: grid; grid-template-rows: auto minmax(0, 1fr); height: calc(100dvh - var(--header-h) - env(safe-area-inset-top, 0px)); }
+.explore-bar { background: var(--surface); border-bottom: 1px solid var(--line); }
+.explore-bar .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding-block: 8px; max-width: none; }
+.explore-bar label { font-weight: 600; }
+select { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-family: var(--font-mono); font-size: .86rem; max-width: 100%; }
+.panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 0; }
+.pane { overflow-y: auto; min-width: 0; }
+.pane + .pane { border-left: 1px solid var(--line); }
+.pane-head { position: sticky; top: 0; z-index: 3; background: var(--bg); border-bottom: 1px solid var(--line); padding: 14px 18px 12px; display: grid; gap: 8px; }
+.pane-body { padding: 4px 18px 32px; }
+.hint { font-size: .84rem; color: var(--muted); }
+.guide { font-size: .84rem; color: var(--fg-2); margin-top: 18px; }
+.guide summary { cursor: pointer; color: var(--muted); font-size: .82rem; }
+.guide summary:hover { color: var(--accent); }
+.guide ul { margin-top: 6px; padding-left: 18px; display: grid; gap: 3px; }
+@media (max-width: 1000px) {
+  .explore { height: auto; display: block; }
+  .panes { display: block; }
+  .pane { overflow: visible; }
+  .pane + .pane { border-left: 0; border-top: 1px solid var(--line); }
+  .pane-head { position: static; }
+}
+
+.sid { display: inline-flex; flex-wrap: nowrap; gap: 3px; vertical-align: middle; }
+.tok { font-family: var(--font-mono); font-size: .76rem; line-height: 1; padding: 4px 6px; border-radius: 4px; border: 1.5px solid var(--lc, var(--muted)); color: var(--fg); }
+.tok.on { background: var(--lc, var(--muted)); color: #fff; }
+.tok.collision { --lc: var(--muted); border-style: dashed; }
+.legend-levels { display: flex; flex-wrap: wrap; gap: 10px; font-size: .82rem; color: var(--fg-2); }
+.legend-levels span { display: inline-flex; align-items: center; gap: 5px; }
+.legend-levels i { width: 11px; height: 11px; border-radius: 3px; background: var(--lc); display: inline-block; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.crumbs button { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 9px; cursor: pointer; font-family: var(--font-mono); font-size: .82rem; }
+.crumbs button.current { border-color: var(--accent); color: var(--accent); cursor: default; }
+.crumbs .sep { color: var(--muted); }
+.code-list { list-style: none; margin: 0; padding: 4px; display: grid; gap: 1px; max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.code-list button { width: 100%; display: grid; grid-template-columns: 3.4em 6em 1fr; gap: 8px; align-items: baseline; text-align: left; background: none; border: 0; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: .85rem; }
+.code-list button:hover { background: var(--surface-2); }
+.code-list .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.code-list .w { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .88rem; }
+.stats b { font-variant-numeric: tabular-nums; }
+.block { margin-top: 16px; display: grid; gap: 6px; }
+.block h4 { font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+.bars { display: grid; gap: 4px; }
+.bar-row { display: grid; grid-template-columns: minmax(90px, 30%) 1fr auto; gap: 8px; align-items: center; font-size: .86rem; }
+.bar-track { height: 9px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+.bar-row .val { font-variant-numeric: tabular-nums; color: var(--fg-2); font-size: .8rem; }
+.words { display: flex; flex-wrap: wrap; gap: 5px; }
+.word { background: var(--surface-2); border-radius: 999px; padding: 1px 9px; font-size: .84rem; }
+.word small { color: var(--muted); margin-left: 4px; }
+.movie-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.movie-list button { width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; }
+.movie-list button:hover { background: var(--surface-2); }
+.movie-list button.active { background: var(--accent-soft); }
+.movie-list .t { font-weight: 600; }
+.movie-list .g { font-size: .8rem; color: var(--muted); grid-column: 1; }
+.movie-list .sid { grid-column: 2; grid-row: 1 / span 2; }
+.search-box { position: relative; }
+#movie-search { width: 100%; }
+.search-results { list-style: none; margin: 0; padding: 4px; position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 4; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.15); max-height: 320px; overflow-y: auto; }
+.search-results:empty { display: none; }
+.search-results button { width: 100%; text-align: left; background: none; border: 0; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+.search-results button:hover, .search-results button.hl { background: var(--surface-2); }
+.search-results .none { padding: 5px 8px; color: var(--muted); }
+.movie-card h3 { font-size: 1.2rem; }
+.movie-card .meta { color: var(--muted); font-size: .88rem; }
+.movie-card .overview { margin-top: 6px; color: var(--fg-2); font-size: .92rem; max-width: 75ch; }
+.prefix-rows { display: grid; gap: 6px; }
+.prefix-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .88rem; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-align: left; }
+.nn-table td, .nn-table th { white-space: normal; position: static; }
+.nn-table td:nth-child(2) { text-align: left; }
+.nn-table td:nth-child(4) { white-space: nowrap; }
+.sub { color: var(--muted); font-size: .82em; }
+</style>
+</head>
+<body>
+
+<div id="fatal" role="alert"></div>
+<div id="loading" hidden><div class="box" id="loading-text">Carregando…</div></div>
+
+<header class="topbar" id="topbar">
+  <div class="wrap">
+    <span class="brand">Semantic IDs</span>
+    <div class="tabs" role="tablist" aria-label="Seções do relatório">
+      <button type="button" role="tab" id="tab-eval" aria-controls="view-eval" aria-selected="true">Avaliação</button>
+      <button type="button" role="tab" id="tab-explore" aria-controls="view-explore" aria-selected="false" tabindex="-1">Exploração</button>
+    </div>
+    <div class="seg" id="dataset-seg" role="radiogroup" aria-label="Dataset"></div>
+    <div class="facts" id="facts"></div>
+  </div>
+</header>
+
+<!-- ===================== AVALIAÇÃO ===================== -->
+<main id="view-eval" role="tabpanel" aria-labelledby="tab-eval">
+  <div class="subbar">
+    <div class="wrap">
+      <div class="chips" id="sel-chips" aria-label="Modelos selecionados"></div>
+      <nav class="secnav" aria-label="Seções da avaliação">
+        <a href="#sec-models">Modelos</a>
+        <a href="#sec-overview">Visão geral</a>
+        <a href="#sec-hier">Hierarquia</a>
+        <a href="#sec-sem">Semântica</a>
+        <a href="#sec-quant">Quantização</a>
+        <a href="#sec-train">Treino</a>
+      </nav>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <section class="eval-section" id="sec-models">
+      <div class="sec-head">
+        <h2>Modelos</h2>
+        <p>Marque até 8 modelos para comparar. Passe o mouse nos cabeçalhos para ver cada métrica.</p>
+      </div>
+      <div class="table-tools">
+        <input type="search" id="model-filter" placeholder="Filtrar: L3, K64, seed, H256…" aria-label="Filtrar modelos" autocomplete="off">
+        <span class="small muted" id="sel-count"></span>
+        <button type="button" class="btn" id="sel-suggested">Selecionar destaques</button>
+        <button type="button" class="btn" id="sel-clear">Limpar seleção</button>
+      </div>
+      <p class="note" id="sel-msg" hidden></p>
+      <div class="table-scroll models"><table id="model-table"></table></div>
+    </section>
+
+    <section class="eval-section" id="sec-overview">
+      <div class="sec-head">
+        <h2>Visão geral</h2>
+        <p>Mais códigos deixam os IDs únicos, mas encurtam a hierarquia.</p>
+      </div>
+      <div class="highlights" id="highlights"></div>
+      <div class="cards one" id="cards-overview"></div>
+      <h3 style="margin-top:6px">Prós e contras</h3>
+      <div class="fichas" id="fichas"></div>
+    </section>
+
+    <section class="eval-section" id="sec-hier">
+      <div class="sec-head">
+        <h2>Hierarquia</h2>
+        <p>Até que nível os tokens ainda agrupam filmes.</p>
+      </div>
+      <div class="cards" id="cards-hier"></div>
+    </section>
+
+    <section class="eval-section" id="sec-sem">
+      <div class="sec-head">
+        <h2>Semântica</h2>
+        <p>Se filmes do mesmo prefixo são parecidos no embedding original.</p>
+      </div>
+      <div class="cards" id="cards-sem"></div>
+    </section>
+
+    <section class="eval-section" id="sec-quant">
+      <div class="sec-head">
+        <h2>Quantização</h2>
+        <p>Quanto cada nível descreve de z e como os códigos são usados.</p>
+      </div>
+      <div class="cards" id="cards-quant"></div>
+    </section>
+
+    <section class="eval-section" id="sec-train">
+      <div class="sec-head">
+        <h2>Treino</h2>
+        <p>Convergência e overfitting. O modelo salvo é o da última época.</p>
+      </div>
+      <div class="cards" id="cards-train"></div>
+    </section>
+  </div>
+</main>
+
+<!-- ===================== EXPLORAÇÃO ===================== -->
+<main id="view-explore" role="tabpanel" aria-labelledby="tab-explore" hidden>
+  <div class="explore">
+    <div class="explore-bar">
+      <div class="wrap">
+        <label for="explore-run">Modelo</label>
+        <select id="explore-run"></select>
+        <div class="legend-levels" id="level-legend"></div>
+      </div>
+    </div>
+    <div class="panes">
+      <section class="pane" id="pane-tokens" aria-labelledby="tokens-title">
+        <div class="pane-head">
+          <h2 id="tokens-title">Filtrar por tokens</h2>
+          <p class="hint">Um código por nível, do geral ao específico.</p>
+          <div class="crumbs" id="crumbs"></div>
+        </div>
+        <div class="pane-body">
+          <div id="children"></div>
+          <div id="group-view"></div>
+          <details class="guide">
+            <summary>Como ler um grupo</summary>
+            <ul>
+              <li><b>Coesão</b>: cosseno médio entre os filmes do grupo. Maior que a do grupo pai = o token juntou filmes parecidos.</li>
+              <li><b>Palavras</b>: mais frequentes no grupo que no catálogo; o número é a contagem no grupo.</li>
+              <li><b>Gêneros</b>: fração do grupo; "×" compara com o catálogo.</li>
+            </ul>
+          </details>
+        </div>
+      </section>
+      <section class="pane" id="pane-movies" aria-labelledby="movies-title">
+        <div class="pane-head">
+          <h2 id="movies-title">Buscar filme</h2>
+          <div class="search-box">
+            <input id="movie-search" type="search" placeholder="Título em inglês: Toy Story, Matrix, Godfather…" autocomplete="off" aria-label="Buscar filme pelo título">
+            <ul class="search-results" id="movie-results"></ul>
+          </div>
+        </div>
+        <div class="pane-body">
+          <div id="movie-view"></div>
+          <details class="guide">
+            <summary>Como ler os vizinhos</summary>
+            <ul>
+              <li>Vizinhos: os mais parecidos no embedding original. Tokens preenchidos = compartilhados com o filme.</li>
+              <li>O token tracejado só desempata colisões.</li>
+            </ul>
+          </details>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<div id="tip" role="tooltip" hidden></div>
+
+<script>
+// Errors show up at the top of the page instead of silently breaking it.
+function showFatal(message, detail) {
+  var box = document.getElementById("fatal");
+  box.className = "show";
+  box.innerHTML = "<b>O relatório encontrou um erro.</b> Copie a mensagem abaixo e envie para correção.<pre></pre>";
+  box.querySelector("pre").textContent = message + (detail ? "\n" + detail : "");
+}
+function showNotice(html) {
+  var box = document.getElementById("fatal");
+  box.className = "show";
+  box.innerHTML = html;
+}
+window.addEventListener("error", function (e) {
+  // the browser reports this harmless layout notice through the error event; it is not a failure
+  if (!e.message || /ResizeObserver loop/.test(e.message)) return;
+  showFatal(String(e.message), e.error && e.error.stack);
+});
+</script>
+<script src="manifest.js"></script>
+<script>
+"use strict";
+
+// ================= helpers =================
+const fmt = (x, d = 3) => x == null || Number.isNaN(x) ? "–" : Number(x).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = (x, d = 1) => x == null || Number.isNaN(x) ? "–" : (100 * x).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d }) + "%";
+const signed = (x, d = 3) => x == null ? "–" : (x > 0 ? "+" : "") + fmt(x, d);
+const int = x => Number(x).toLocaleString("pt-BR");
+const times = x => x >= 100 ? `${int(Math.round(x))}×` : `${fmt(x, x >= 10 ? 0 : 1)}×`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const normalize = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const plural = (n, one, many = one + "s") => `${int(n)} ${n === 1 ? one : many}`;
+const levelVar = level => `var(--l${Math.min(level, 5)})`;
+const slotVar = slot => `var(--s${slot + 1})`;
+function el(tag, attrs = {}, html = "") {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
+  node.innerHTML = html;
+  return node;
+}
+const $ = id => document.getElementById(id);
+const store = {
+  get() { try { return JSON.parse(localStorage.getItem("sid-report-v2") || "{}"); } catch (e) { return {}; } },
+  set(patch) { try { localStorage.setItem("sid-report-v2", JSON.stringify({ ...store.get(), ...patch })); } catch (e) {} },
+};
+
+// ================= metric glossary (one source for tooltips, tables and cards) =================
+// what: what it is · better: which direction is good · how: how it's computed
+const METRICS = {
+  capacity: { label: "Capacidade", what: "Quantos SIDs diferentes o modelo consegue formar, em relação ao número de filmes.", better: "Abaixo de ~10× as colisões sobem rápido; muito acima de 50× os últimos níveis tendem a virar identificadores.", how: "K^L ÷ número de filmes. Ex.: K=32 e L=3 dão 32³ = 32.768 combinações." },
+  unique: { label: "IDs únicos", what: "Quantos SIDs distintos existem para cada filme do catálogo.", better: "Maior é melhor. 100% = cada filme tem um SID só seu, sem precisar do token de desempate.", how: "Número de SIDs distintos (os L tokens) ÷ número de filmes." },
+  maxColl: { label: "Maior colisão", what: "O maior número de filmes que receberam exatamente o mesmo SID.", better: "Menor é melhor. 1 = nenhuma colisão. Valores altos significam que o token de desempate (sem significado) carrega parte da identidade.", how: "Tamanho do maior grupo de filmes com os mesmos L tokens." },
+  depth: { label: "Níveis com grupo", what: "Quantos níveis do SID ainda agrupam filmes, de forma contínua.", better: "Maior indica hierarquia mais funda. Ex.: 2,2 = os dois primeiros tokens agrupam quase todos os filmes e o 3º agrupa ~20%.", how: "Soma, nos níveis k = 1…L, da fração de filmes que dividem os k primeiros tokens com pelo menos outro filme." },
+  lift1: { label: "Ganho do 1º token", what: "Quanto os filmes que dividem o 1º token são mais parecidos do que se o token fosse sorteado.", better: "Maior é melhor. Perto de zero = o token separa os filmes sem critério de semelhança.", how: "Cosseno médio dentro dos grupos − cosseno médio com o token embaralhado (mesmos tamanhos de grupo)." },
+  nn1: { label: "Vizinhos no 1º token", what: "Dos 10 filmes mais parecidos de cada filme, quantos receberam o mesmo 1º token.", better: "Maior é melhor, mas compare com o acaso: grupos grandes (K pequeno) acertam mais até ao acaso.", how: "Média, por filme, da fração dos 10 vizinhos (cosseno no embedding original) com o mesmo 1º token." },
+  recon: { label: "Reconstrução", what: "Fração da variação entre filmes que o modelo não consegue reconstruir, na validação.", better: "Menor é melhor. 1,0 = o modelo só aprendeu a média do catálogo. Diferenças pequenas entre modelos pesam pouco na escolha.", how: "MSE entre o embedding padronizado e a saída do decoder, nos 5% de filmes de validação, na melhor época." },
+  gap: { label: "Overfitting", what: "Quanto a reconstrução de validação piorou entre a melhor época e a última (a salva).", better: "Até ~0,01 é ruído. Acima de 0,02 o modelo salvo é pior que o melhor que o treino chegou a ter.", how: "Reconstrução de validação na última época − na melhor época." },
+  vocab: { label: "Vocabulário", what: "Total de tokens diferentes que um modelo gerativo precisa aprender para produzir esses SIDs.", better: "Menor é mais fácil de aprender; maior dá mais expressividade por token.", how: "L × K (mais os tokens de desempate)." },
+  effUse: { label: "Uso do codebook", what: "Quão uniformemente os códigos de cada nível são usados.", better: "Perto de 100% é bom. Abaixo de 50% indica poucos códigos concentrando os filmes.", how: "exp(entropia do uso dos códigos) ÷ K, no pior nível." },
+};
+function metricTip(key) {
+  const m = METRICS[key];
+  return `<p><b>${esc(m.label)}</b>: ${esc(m.what)}</p><p><span class="lbl">Como ler</span><br>${esc(m.better)}</p><p><span class="lbl">Cálculo</span><br>${esc(m.how)}</p>`;
+}
+
+// ================= tooltips =================
+// [data-tip] holds plain text; [data-metric] points to the glossary. Works on hover, keyboard focus and tap.
+const tipBox = () => $("tip");
+function placeTip(x, y) {
+  const tip = tipBox();
+  const box = tip.getBoundingClientRect();
+  let left = x + 14, top = y + 14;
+  if (left + box.width > window.innerWidth - 8) left = x - box.width - 14;
+  if (top + box.height > window.innerHeight - 8) top = y - box.height - 14;
+  tip.style.left = `${Math.max(8, left)}px`;
+  tip.style.top = `${Math.max(8, top)}px`;
+}
+function showTipHtml(html, x, y) {
+  const tip = tipBox();
+  tip.innerHTML = html;
+  tip.hidden = false;
+  placeTip(x, y);
+}
+function hideTip() { tipBox().hidden = true; }
+function tipContent(node) {
+  if (node.dataset.metric) return metricTip(node.dataset.metric);
+  return node.dataset.tip.split("\n").map(line => `<p>${esc(line)}</p>`).join("");
+}
+let tipOwner = null;
+document.addEventListener("mouseover", e => {
+  const node = e.target.closest("[data-tip], [data-metric]");
+  if (!node || node === tipOwner) return;
+  tipOwner = node;
+  showTipHtml(tipContent(node), e.clientX, e.clientY);
+});
+document.addEventListener("mousemove", e => { if (tipOwner) placeTip(e.clientX, e.clientY); });
+document.addEventListener("mouseout", e => {
+  if (tipOwner && !tipOwner.contains(e.relatedTarget)) { tipOwner = null; hideTip(); }
+});
+document.addEventListener("focusin", e => {
+  const node = e.target.closest("[data-tip], [data-metric]");
+  if (!node) return;
+  tipOwner = node;
+  const r = node.getBoundingClientRect();
+  showTipHtml(tipContent(node), r.left, r.bottom);
+});
+document.addEventListener("focusout", () => { if (tipOwner) { tipOwner = null; hideTip(); } });
+document.addEventListener("click", e => {
+  const node = e.target.closest(".info");
+  if (!node) return;
+  e.preventDefault();
+  const r = node.getBoundingClientRect();
+  tipOwner = node;
+  showTipHtml(tipContent(node), r.left, r.bottom);
+});
+const infoBtn = (text, metric) => metric
+  ? `<button type="button" class="info" data-metric="${metric}" aria-label="O que é ${esc(METRICS[metric].label)}">i</button>`
+  : `<button type="button" class="info" data-tip="${esc(text)}" aria-label="Mais informações">i</button>`;
+
+// ================= svg charts =================
+const SVGNS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs = {}, text = null) {
+  const node = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== null) node.textContent = text;
+  return node;
+}
+function niceTicks(lo, hi, count = 4) {
+  if (!(hi > lo)) { const pad = Math.abs(lo) * 0.1 || 1; lo -= pad; hi += pad; }
+  const raw = (hi - lo) / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const r = raw / mag;
+  const step = (r >= 7.5 ? 10 : r >= 3.5 ? 5 : r >= 1.5 ? 2 : 1) * mag;
+  const ticks = [];
+  for (let v = Math.floor(lo / step + 1e-9) * step; v <= hi + step * 1e-6; v += step) ticks.push(Number(v.toFixed(12)));
+  if (ticks[ticks.length - 1] < hi - step * 1e-6) ticks.push(Number((ticks[ticks.length - 1] + step).toFixed(12)));
+  return ticks;
+}
+const tipRows = (title, rows) => `<div class="t">${esc(title)}</div>` + rows.map(r =>
+  `<div class="row"><i class="key${r.dash ? " dash" : ""}" style="--c:${r.color}"></i><b>${esc(r.value)}</b><span>${esc(r.label)}</span></div>`).join("");
+const legendHtml = items => items.map(i =>
+  `<span><i class="key${i.dash ? " dash" : ""}${i.dot ? " dot" : ""}" style="--c:${i.color}"></i>${esc(i.label)}</span>`).join("");
+
+// Charts keep their spec so they can be redrawn at a new width.
+const CHARTS = new Map();
+function chart(host, spec) { CHARTS.set(host, spec); drawChart(host, spec); }
+function redrawCharts() { for (const [host, spec] of CHARTS) { if (host.isConnected) drawChart(host, spec); else CHARTS.delete(host); } }
+
+/* spec: { kind: "line" | "scatter", height,
+           x: { labels } (categorical) | { min, max, fmt, title } (linear),
+           y: { min, max, fmt, title, log },
+           series: [{ color, points: [[x, y]], width, dash, dots }],     (line)
+           points: [{ x, y, color, label, big, onClick, tip }],          (scatter)
+           refs: [{ y, label }], markers: [{ x, y, color }],
+           tip(at) -> html, snap(x) -> x } */
+function drawChart(host, spec) {
+  host.innerHTML = "";
+  if (!host.clientWidth) return;
+  const W = host.clientWidth, H = spec.height || 230;
+  const m = { top: 14, right: spec.rightPad ?? 18, bottom: spec.x.title ? 42 : 26, left: spec.y.title ? 62 : 48 };
+  const pw = W - m.left - m.right, ph = H - m.top - m.bottom;
+  const categorical = Array.isArray(spec.x.labels);
+  const yFmt = spec.y.fmt || (v => fmt(v, 2));
+  const log = !!spec.y.log;
+
+  const ys = [];
+  if (spec.kind === "bar") ys.push(0);
+  for (const s of spec.series || []) for (const p of s.points) ys.push(p[1]);
+  for (const p of spec.points || []) ys.push(p.y);
+  for (const r of spec.refs || []) ys.push(r.y);
+  const finite = ys.filter(v => Number.isFinite(v) && (!log || v > 0));
+  let lo, hi, yTicks, T;
+  if (log) {
+    T = v => Math.log10(v);
+    lo = Math.floor(Math.log10(Math.min(...finite)));
+    hi = Math.ceil(Math.log10(Math.max(...finite)));
+    if (hi === lo) hi = lo + 1;
+    yTicks = [];
+    for (let e = lo; e <= hi; e++) { yTicks.push(10 ** e); if (hi - lo <= 2 && e < hi) yTicks.push(2 * 10 ** e, 5 * 10 ** e); }
+  } else {
+    T = v => v;
+    lo = spec.y.min ?? Math.min(...finite);
+    hi = spec.y.max ?? Math.max(...finite);
+    yTicks = niceTicks(lo, hi, 4);
+    if (spec.y.min === undefined) lo = yTicks[0];
+    if (spec.y.max === undefined) hi = yTicks[yTicks.length - 1];
+  }
+  const yPx = v => m.top + ph * (1 - (T(v) - lo) / ((hi - lo) || 1));
+
+  let xPx, xInv, xTicks = [], band = 0;
+  if (categorical) {
+    band = pw / spec.x.labels.length;
+    xPx = i => m.left + band * (i + 0.5);
+    xInv = px => Math.min(spec.x.labels.length - 1, Math.max(0, Math.floor((px - m.left) / band)));
+  } else {
+    const xs = [];
+    for (const s of spec.series || []) for (const p of s.points) xs.push(p[0]);
+    for (const p of spec.points || []) xs.push(p.x);
+    const x0 = spec.x.min ?? Math.min(...xs), x1 = spec.x.max ?? Math.max(...xs);
+    xPx = v => m.left + pw * (v - x0) / ((x1 - x0) || 1);
+    xInv = px => x0 + (px - m.left) / pw * (x1 - x0);
+    xTicks = niceTicks(x0, x1, Math.max(2, Math.round(pw / 80))).filter(v => v >= x0 - 1e-9 && v <= x1 + 1e-9);
+  }
+
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": spec.aria || "" });
+  for (const t of yTicks) {
+    const tv = T(t);
+    if (tv < lo - 1e-9 || tv > hi + 1e-9) continue;
+    svg.append(svgEl("line", { class: "grid", x1: m.left, x2: m.left + pw, y1: yPx(t), y2: yPx(t) }));
+    svg.append(svgEl("text", { x: m.left - 7, y: yPx(t) + 4, "text-anchor": "end" }, yFmt(t)));
+  }
+  svg.append(svgEl("line", { class: "axis", x1: m.left, x2: m.left + pw, y1: m.top + ph, y2: m.top + ph }));
+  if (categorical) {
+    const every = Math.max(1, Math.ceil(spec.x.labels.length / Math.max(1, Math.floor(pw / 52))));
+    spec.x.labels.forEach((label, i) => { if (i % every === 0) svg.append(svgEl("text", { x: xPx(i), y: m.top + ph + 17, "text-anchor": "middle" }, String(label))); });
+  } else {
+    const xFmt = spec.x.fmt || (v => fmt(v, 0));
+    for (const t of xTicks) svg.append(svgEl("text", { x: xPx(t), y: m.top + ph + 17, "text-anchor": "middle" }, xFmt(t)));
+  }
+  if (spec.x.title) svg.append(svgEl("text", { class: "ttl", x: m.left + pw / 2, y: H - 5, "text-anchor": "middle" }, spec.x.title));
+  if (spec.y.title) svg.append(svgEl("text", { class: "ttl", transform: `translate(13 ${m.top + ph / 2}) rotate(-90)`, "text-anchor": "middle" }, spec.y.title));
+
+  const drawRefs = () => {
+    for (const r of spec.refs || []) {
+      svg.append(svgEl("line", { class: "ref", x1: m.left, x2: m.left + pw, y1: yPx(r.y), y2: yPx(r.y) }));
+      if (r.label) svg.append(svgEl("text", { x: m.left + pw - 4, y: yPx(r.y) - 5, "text-anchor": "end" }, r.label));
+    }
+  };
+  if (spec.kind !== "bar") drawRefs();  // behind lines, but on top of bars so a histogram's mean stays visible
+
+  if (spec.kind === "bar") {
+    // grouped bars: one slot per series inside each category; dense histograms get a 1px gap only when it fits
+    const ns = spec.series.length;
+    const inner = ns > 1 ? band * 0.72 : band * (band > 14 ? 0.6 : 1);
+    const gap = inner / ns > 4 ? Math.min(2, inner / ns * 0.15) : 0;
+    const bw = inner / ns;
+    spec.series.forEach((s, si) => {
+      for (const [i, v] of s.points) {
+        if (!Number.isFinite(v) || v <= 0) continue;
+        const x = m.left + band * i + (band - inner) / 2 + bw * si + gap / 2;
+        const y = yPx(v), h = yPx(0) - y;
+        const rect = svgEl("rect", { x: x.toFixed(2), y: y.toFixed(2), width: Math.max(0.7, bw - gap).toFixed(2), height: Math.max(1, h).toFixed(2), rx: bw > 8 ? 2 : 0 });
+        rect.style.fill = s.color;
+        svg.append(rect);
+      }
+    });
+    drawRefs();
+  }
+
+  for (const s of spec.kind === "bar" ? [] : spec.series || []) {
+    const pts = s.points.filter(p => Number.isFinite(p[1]) && (!log || p[1] > 0));
+    if (pts.length > 1) {
+      const path = svgEl("path", { d: pts.map((p, j) => `${j ? "L" : "M"}${xPx(p[0]).toFixed(1)},${yPx(p[1]).toFixed(1)}`).join(""), fill: "none", "stroke-linejoin": "round", "stroke-linecap": "round" });
+      path.style.stroke = s.color;
+      path.style.strokeWidth = s.width || 2;
+      if (s.dash) path.style.strokeDasharray = s.dash;
+      svg.append(path);
+    }
+    if (s.dots) for (const p of pts) {
+      const dot = svgEl("circle", { cx: xPx(p[0]), cy: yPx(p[1]), r: 4 });
+      dot.style.fill = s.color;
+      dot.style.stroke = "var(--surface)";
+      dot.style.strokeWidth = 2;
+      svg.append(dot);
+    }
+  }
+  for (const mk of spec.markers || []) {
+    const c = svgEl("circle", { cx: xPx(mk.x), cy: yPx(mk.y), r: 5 });
+    c.style.fill = "var(--surface)";
+    c.style.stroke = mk.color;
+    c.style.strokeWidth = 2.5;
+    svg.append(c);
+  }
+
+  if (spec.points) {
+    const ordered = [...spec.points].sort((a, b) => (a.big ? 1 : 0) - (b.big ? 1 : 0));
+    for (const p of ordered) {
+      const c = svgEl("circle", { cx: xPx(p.x), cy: yPx(p.y), r: p.big ? 7 : 5 });
+      c.style.fill = p.color;
+      c.style.stroke = "var(--surface)";
+      c.style.strokeWidth = 2;
+      if (!p.big) c.style.opacity = 0.55;
+      svg.append(c);
+    }
+    for (const p of ordered.filter(p => p.big && p.label)) {
+      const right = xPx(p.x) < m.left + pw * 0.75;
+      svg.append(svgEl("text", { class: "lab", x: xPx(p.x) + (right ? 11 : -11), y: yPx(p.y) + 4, "text-anchor": right ? "start" : "end" }, p.label));
+    }
+    for (const p of ordered) {
+      const hit = svgEl("circle", { class: "hit", cx: xPx(p.x), cy: yPx(p.y), r: 13, tabindex: 0, role: "button", "aria-label": p.aria || p.label || "" });
+      hit.addEventListener("mouseenter", e => showTipHtml(p.tip, e.clientX, e.clientY));
+      hit.addEventListener("mousemove", e => placeTip(e.clientX, e.clientY));
+      hit.addEventListener("mouseleave", hideTip);
+      hit.addEventListener("focus", () => { const r = hit.getBoundingClientRect(); showTipHtml(p.tip, r.right, r.bottom); });
+      hit.addEventListener("blur", hideTip);
+      if (p.onClick) {
+        hit.addEventListener("click", p.onClick);
+        hit.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); p.onClick(); } });
+      }
+      svg.append(hit);
+    }
+  } else if (spec.tip) {
+    const guide = svgEl("line", { class: "guide-line", y1: m.top, y2: m.top + ph, visibility: "hidden" });
+    svg.append(guide);
+    const overlay = svgEl("rect", { x: m.left, y: m.top, width: pw, height: ph, fill: "transparent" });
+    overlay.addEventListener("mousemove", evt => {
+      const box = svg.getBoundingClientRect();
+      let at = xInv((evt.clientX - box.left) * (W / box.width));
+      if (!categorical && spec.snap) at = spec.snap(at);
+      guide.setAttribute("x1", xPx(at)); guide.setAttribute("x2", xPx(at)); guide.setAttribute("visibility", "visible");
+      showTipHtml(spec.tip(at), evt.clientX, evt.clientY);
+    });
+    overlay.addEventListener("mouseleave", () => { guide.setAttribute("visibility", "hidden"); hideTip(); });
+    svg.append(overlay);
+  }
+  host.append(svg);
+}
+
+// ================= datasets =================
+const MANIFEST = window.SID_MANIFEST || [];
+const CACHE = {};
+const PENDING = {};
+window.SID_REPORT_LOADED = (id, raw) => {
+  CACHE[id] = prepareDataset(id, raw);
+  if (PENDING[id]) PENDING[id](CACHE[id]);
+};
+function loadDataset(entry) {
+  if (CACHE[entry.id]) return Promise.resolve(CACHE[entry.id]);
+  return new Promise((resolve, reject) => {
+    PENDING[entry.id] = resolve;
+    const s = document.createElement("script");
+    s.src = entry.file;
+    s.onerror = () => reject(new Error(`Não consegui carregar ${entry.file}. Gere de novo com: python src/build_report.py`));
+    document.head.append(s);
+  });
+}
+
+const CONFIG_EXTRAS = [
+  ["hidden_dims", c => `H${c.hidden_dims.join("-")}`],
+  ["beta", c => `β${c.beta}`],
+  ["epochs", c => `${c.epochs} ép.`],
+  ["lr", c => `lr ${c.lr}`],
+  ["batch_size", c => `lote ${c.batch_size}`],
+  ["kmeans_iters", c => c.kmeans_iters > 0 ? `kmeans ${c.kmeans_iters}` : "sem kmeans"],
+  ["no_reset", c => c.no_reset ? "sem reset" : "com reset"],
+  ["no_standardize", c => c.no_standardize ? "sem padron." : "padron."],
+  ["seed", c => `seed ${c.seed}`],
+];
+
+function prepareDataset(id, raw) {
+  const N = raw.meta.n_items;
+  const runs = raw.runs;
+  // short labels: L·K·D plus only the settings that vary between this dataset's runs
+  const varying = CONFIG_EXTRAS.filter(([k]) => new Set(runs.map(r => JSON.stringify(r.config[k]))).size > 1);
+  for (const r of runs) {
+    const c = r.config;
+    r.L = c.levels; r.K = c.codebook_size; r.D = c.codebook_dim;
+    r.label = [`L${r.L} · K${r.K} · D${r.D}`, ...varying.map(([, f]) => f(c))].join(" · ");
+  }
+  const counts = {};
+  for (const r of runs) counts[r.label] = (counts[r.label] || 0) + 1;
+  for (const r of runs) if (counts[r.label] > 1) r.label += ` · ${r.name}`;
+
+  const bestRecon = Math.min(...runs.map(r => r.metrics.best_val_recon));
+  for (const r of runs) {
+    const m = r.metrics, ps = r.prefix_similarity, na = r.neighbor_agreement;
+    r.d = {
+      capacity: r.K ** r.L / N,
+      unique: m.unique_ids,
+      collisions: m.collision_share,
+      maxColl: m.max_collision + 1,
+      depth: ps.reduce((s, p) => s + p.items_in_shared_groups, 0),
+      lift1: ps[0].lift,
+      nn1: na[0].neighbors_sharing,
+      nn1Rand: na[0].expected_random,
+      recon: m.best_val_recon,
+      gap: m.last_val_recon - m.best_val_recon,
+      vocab: r.L * r.K,
+      effUse: Math.min(...r.codebook.map(c => c.effective_codes / r.K)),
+      effWorstLevel: r.codebook.reduce((w, c, i) => c.effective_codes / r.K < r.codebook[w].effective_codes / r.K ? i : w, 0),
+      bestRecon: m.best_val_recon <= bestRecon + 1e-9,
+    };
+  }
+  return { id, meta: raw.meta, N, items: raw.items, runs, K_NN: raw.meta.n_neighbors, neighbors: raw.neighbors, sims: raw.neighbor_sims, index: null };
+}
+
+// ================= state =================
+const state = {
+  ds: null,                // prepared dataset
+  selected: [],            // run names, in selection order
+  slots: new Map(),        // run name -> color slot, kept while selected
+  sort: { key: "label", dir: 1 },
+  filter: "",
+  focusRun: null,          // model shown in the codebook histograms
+  exploreRun: null,
+  treePrefix: [],
+  currentMovie: null,
+  tab: "eval",
+};
+const MAX_SEL = 8;
+const runByName = name => state.ds.runs.find(r => r.name === name);
+const selRuns = () => state.selected.map(runByName).filter(Boolean);
+const colorOf = r => slotVar(state.slots.get(r.name));
+
+function toggleRun(name) {
+  const msg = $("sel-msg");
+  msg.hidden = true;
+  if (state.selected.includes(name)) {
+    state.selected = state.selected.filter(n => n !== name);
+    state.slots.delete(name);
+  } else {
+    if (state.selected.length >= MAX_SEL) {
+      msg.textContent = `Já há ${MAX_SEL} modelos selecionados, o máximo para as cores continuarem distinguíveis. Desmarque um para adicionar outro.`;
+      msg.hidden = false;
+      return;
+    }
+    const used = new Set(state.slots.values());
+    let slot = 0;
+    while (used.has(slot)) slot++;
+    state.slots.set(name, slot);
+    state.selected.push(name);
+  }
+  saveSelection();
+  renderEval();
+}
+function setSelection(names) {
+  state.selected = [];
+  state.slots = new Map();
+  names.slice(0, MAX_SEL).forEach((n, i) => { state.selected.push(n); state.slots.set(n, i); });
+  saveSelection();
+}
+function saveSelection() {
+  const sel = store.get().selection || {};
+  sel[state.ds.id] = state.selected;
+  store.set({ selection: sel });
+}
+
+// ================= highlights, pros/cons =================
+function highlightsOf(ds) {
+  const runs = ds.runs;
+  const pick = (list, score) => list.length ? list.reduce((a, b) => score(b) > score(a) ? b : a) : null;
+  const items = [];
+  const add = (key, title, r, value, desc) => { if (r) items.push({ key, title, r, value, desc }); };
+  const uniq = pick(runs, r => r.d.unique + 1e-6 * r.d.depth);
+  add("unique", "Mais IDs únicos", uniq, pct(uniq.d.unique), "Quase nenhuma colisão.");
+  const deepOk = runs.filter(r => r.d.unique >= 0.85);
+  const deep = pick(deepOk.length ? deepOk : runs, r => r.d.depth);
+  add("depth", "Hierarquia mais funda (≥85% únicos)", deep, `${fmt(deep.d.depth, 1)} níveis`, "Mais níveis que ainda agrupam filmes, com colisões aceitáveis.");
+  const lift = pick(runs, r => r.d.lift1);
+  add("lift1", "1º token mais informativo", lift, signed(lift.d.lift1), "Maior ganho de semelhança no 1º token.");
+  const rec = pick(runs, r => -r.d.recon);
+  add("recon", "Melhor reconstrução", rec, fmt(rec.d.recon), "Menor perda de informação, sem olhar a hierarquia.");
+  return items;
+}
+
+function prosCons(r, ds) {
+  const d = r.d, pros = [], cons = [];
+  const ps = r.prefix_similarity;
+  const lastGrouped = ps.reduce((k, p, i) => p.items_in_shared_groups >= 0.5 ? i + 1 : k, 0);
+  if (d.unique >= 0.97) pros.push(`IDs praticamente únicos (${pct(d.unique)}): o token de desempate quase nunca é usado.`);
+  else if (d.unique >= 0.85) pros.push(`Colisões aceitáveis: ${pct(d.unique)} de IDs únicos, no máximo ${d.maxColl} filmes no mesmo SID.`);
+  if (lastGrouped >= 2) pros.push(`Hierarquia com ${lastGrouped} níveis que agrupam a maioria dos filmes (${ps.slice(0, lastGrouped).map(p => `${fmt(p.mean_group_size, p.mean_group_size >= 10 ? 0 : 1)}`).join(" → ")} filmes por grupo).`);
+  if (d.lift1 >= 0.1) pros.push(`1º token forte: filmes no mesmo grupo são bem mais parecidos que numa divisão aleatória (ganho ${signed(d.lift1)}).`);
+  if (d.nn1Rand > 0 && d.nn1 / d.nn1Rand >= 20) pros.push(`${pct(d.nn1, 0)} dos vizinhos dividem o 1º token, ${fmt(d.nn1 / d.nn1Rand, 0)}× o esperado ao acaso.`);
+  if (d.bestRecon) pros.push(`Melhor reconstrução do dataset (${fmt(d.recon)}).`);
+  if (d.gap <= 0.01) pros.push("Sem overfitting: a época salva está perto da melhor.");
+  if (d.vocab <= 128) pros.push(`Vocabulário pequeno (${d.vocab} tokens): mais fácil para um modelo gerativo aprender.`);
+
+  if (d.unique < 0.85) cons.push(`${pct(1 - d.unique, 0)} dos SIDs se repetem (até ${d.maxColl} filmes no mesmo SID): o token de desempate, sem significado, passa a identificar muitos filmes.`);
+  if (d.capacity < 5) cons.push(`Capacidade baixa (${times(d.capacity)} o catálogo): colisões são inevitáveis.`);
+  if (r.L >= 2 && ps[1] && ps[1].items_in_shared_groups < 0.3) cons.push(`Hierarquia rasa: só ${pct(ps[1].items_in_shared_groups, 0)} dos filmes ainda têm grupo no 2º nível. Dali em diante os tokens funcionam como ID.`);
+  if (d.gap > 0.02) cons.push(`Overfitting: a reconstrução piorou ${signed(d.gap)} entre a melhor época (${r.metrics.best_epoch}) e a salva.`);
+  if (r.L >= 5) cons.push(`SID longo (${r.L} tokens + desempate): geração mais lenta e mais passos em que o modelo pode errar.`);
+  if (d.vocab >= 768) cons.push(`Vocabulário grande (${int(d.vocab)} tokens): exige mais dados para o modelo gerativo aprender cada token.`);
+  if (d.effUse < 0.5) cons.push(`Uso concentrado do codebook no nível ${d.effWorstLevel + 1} (${pct(d.effUse, 0)} efetivo).`);
+  if (!pros.length) pros.push("Nenhum ponto forte se destaca pelos critérios automáticos.");
+  if (!cons.length) cons.push("Nenhum problema relevante pelos critérios automáticos.");
+
+  let when;
+  if (d.unique < 0.85) when = "Útil para estudar hierarquias profundas. Como ID final, as colisões pesam: aumente K ou L.";
+  else if (lastGrouped >= 2) when = "Bom candidato principal: hierarquia do geral ao específico com poucas colisões.";
+  else if (d.unique >= 0.97) when = "Quando a unicidade importa mais que a hierarquia, ou como baseline (padrão do TIGER).";
+  else when = "Intermediário: compare com os vizinhos de configuração antes de escolher.";
+  return { pros, cons, when };
+}
+
+// ================= evaluation: cards =================
+// Every card has the same anatomy: what it shows, the chart, how to read, an automatic reading of the
+// selected models, and how it's computed.
+const CARDS = [];
+function defineCard(section, card) { CARDS.push({ section, ...card }); }
+const levelLabels = runs => Array.from({ length: Math.max(...runs.map(r => r.L)) }, (_, k) => `${k + 1}º`);
+const perLevel = (runs, fn) => runs.map(r => ({
+  color: colorOf(r), dots: true, label: r.label,
+  points: r.prefix_similarity.map((p, k) => [k, fn(r, k)]),
+}));
+const levelTip = (runs, fn, valueFmt, extra) => k => tipRows(`${k + 1}º nível (prefixo de ${k + 1} token${k ? "s" : ""})`,
+  runs.filter(r => k < r.L).map(r => ({ color: colorOf(r), value: valueFmt(fn(r, k)), label: r.label + (extra ? extra(r, k) : "") })));
+const lineLegend = runs => legendHtml(runs.map(r => ({ color: colorOf(r), label: r.label })));
+const boxLegend = runs => legendHtml(runs.map(r => ({ color: colorOf(r), label: r.label, dot: true })));
+
+defineCard("overview", {
+  id: "tradeoff", title: "Mapa de trade-off",
+  what: "Todos os modelos do dataset. Clique num ponto para selecionar.",
+  read: "Direita: menos colisões. Acima: hierarquia mais funda.",
+  calc: `<p><b>Eixo x:</b> IDs únicos = SIDs distintos ÷ filmes.</p><p><b>Eixo y:</b> níveis com grupo = soma, em k = 1…L, da fração de filmes que dividem os k primeiros tokens com outro filme. Vai de 1 (só o 1º token agrupa) até L.</p><p><b>Fronteira:</b> um modelo está na fronteira quando nenhum outro é melhor nos dois eixos ao mesmo tempo.</p>`,
+  wide: true, legend: () => "",
+  draw(host, runs, ds) {
+    const all = ds.runs;
+    chart(host, {
+      kind: "scatter", height: 300, rightPad: 24,
+      x: { min: Math.max(0, Math.floor(Math.min(...all.map(r => r.d.unique)) * 10) / 10 - 0.05), max: 1, fmt: v => pct(v, 0), title: "IDs únicos →" },
+      y: { min: 0, max: Math.ceil(Math.max(...all.map(r => r.d.depth)) + 0.3), fmt: v => fmt(v, Number.isInteger(v) ? 0 : 1), title: "níveis com grupo →" },
+      points: all.map(r => {
+        const sel = state.selected.includes(r.name);
+        return {
+          x: r.d.unique, y: r.d.depth, big: sel, label: sel ? r.label : null,
+          color: sel ? colorOf(r) : "var(--muted)", aria: `${r.label}: ${pct(r.d.unique)} únicos, ${fmt(r.d.depth, 1)} níveis com grupo`,
+          tip: tipRows(r.label, [
+            { color: sel ? colorOf(r) : "var(--muted)", value: pct(r.d.unique), label: "IDs únicos" },
+            { color: sel ? colorOf(r) : "var(--muted)", value: fmt(r.d.depth, 2), label: "níveis com grupo" },
+          ]) + `<p class="small muted" style="margin-top:4px">Clique para ${sel ? "desmarcar" : "selecionar"}.</p>`,
+          onClick: () => toggleRun(r.name),
+        };
+      }),
+    });
+  },
+  reading(runs, ds) {
+    const all = ds.runs;
+    const front = all.filter(a => !all.some(b => b !== a && b.d.unique >= a.d.unique && b.d.depth >= a.d.depth && (b.d.unique > a.d.unique || b.d.depth > a.d.depth)));
+    const out = [`Na fronteira (nenhum outro modelo é melhor nos dois eixos): ${front.sort((a, b) => b.d.unique - a.d.unique).map(r => `<b>${esc(r.label)}</b>`).join(", ")}.`];
+    for (const r of runs) if (!front.includes(r)) out.push(`<b>${esc(r.label)}</b> é dominado: algum modelo tem mais IDs únicos e hierarquia igual ou mais funda.`);
+    return out;
+  },
+});
+
+defineCard("hier", {
+  id: "shared", title: "Filmes que ainda têm grupo",
+  what: "Fração de filmes que dividem o prefixo com outro filme.",
+  read: "Onde a curva cai, o token passa a identificar em vez de agrupar.",
+  calc: `<p>Para cada nível k, os filmes são agrupados pelo prefixo dos k primeiros tokens. Um filme "tem grupo" se outro filme tem o mesmo prefixo.</p><p class="formula">filmes em grupos de 2+ ÷ total de filmes</p>`,
+  draw(host, runs) {
+    chart(host, {
+      kind: "line", x: { labels: levelLabels(runs), title: "nível do SID" }, y: { min: 0, max: 1, fmt: v => pct(v, 0) },
+      series: perLevel(runs, (r, k) => r.prefix_similarity[k].items_in_shared_groups),
+      tip: levelTip(runs, (r, k) => r.prefix_similarity[k].items_in_shared_groups, v => pct(v)),
+    });
+  },
+  reading: runs => runs.map(r => {
+    const ps = r.prefix_similarity;
+    const last = ps.reduce((k, p, i) => p.items_in_shared_groups >= 0.5 ? i + 1 : k, 0);
+    const next = ps[last];
+    return `<b>${esc(r.label)}</b>: agrupa a maioria dos filmes até o ${last}º nível${next ? `; no ${last + 1}º, só ${pct(next.items_in_shared_groups, 0)} ainda têm grupo` : ", o último"}.`;
+  }),
+});
+
+defineCard("hier", {
+  id: "groupsize", title: "Tamanho médio dos grupos",
+  what: "Filmes por prefixo, em média (escala log).",
+  read: "Cair para 1 logo no 2º nível indica hierarquia rasa.",
+  calc: `<p class="formula">filmes ÷ número de prefixos distintos de k tokens</p><p>Grupos de um filme só entram na média; por isso o valor nunca fica abaixo de 1.</p>`,
+  draw(host, runs) {
+    chart(host, {
+      kind: "line", x: { labels: levelLabels(runs), title: "nível do SID" }, y: { log: true, fmt: v => v >= 1 ? int(v) : fmt(v, 1), title: "filmes por grupo" },
+      series: perLevel(runs, (r, k) => r.prefix_similarity[k].mean_group_size),
+      tip: levelTip(runs, (r, k) => r.prefix_similarity[k].mean_group_size, v => `${fmt(v, v >= 10 ? 0 : 1)} filmes`),
+    });
+  },
+  reading: runs => runs.map(r => `<b>${esc(r.label)}</b>: ${r.prefix_similarity.map(p => fmt(p.mean_group_size, p.mean_group_size >= 10 ? 0 : 1)).join(" → ")} filmes por grupo.`),
+});
+
+defineCard("sem", {
+  id: "cohesion", title: "Coesão dos grupos",
+  what: "Cosseno médio entre filmes do mesmo prefixo.",
+  read: "Acima do tracejado = mais parecidos que filmes aleatórios. Sempre sobe com k; leia junto com o ganho.",
+  calc: `<p>Para cada nível k: média do cosseno entre todos os pares de filmes com o mesmo prefixo de k tokens, no embedding original (antes do RQ-VAE).</p><p>A referência é o cosseno médio entre todos os pares do catálogo.</p>`,
+  draw(host, runs, ds) {
+    chart(host, {
+      kind: "line", x: { labels: levelLabels(runs), title: "nível do SID" }, y: { fmt: v => fmt(v, 2), title: "cosseno médio" },
+      refs: [{ y: ds.meta.baseline_cosine, label: "filmes aleatórios" }],
+      series: perLevel(runs, (r, k) => r.prefix_similarity[k].cosine),
+      tip: levelTip(runs, (r, k) => r.prefix_similarity[k].cosine, v => fmt(v)),
+    });
+  },
+  reading(runs, ds) {
+    const base = ds.meta.baseline_cosine;
+    const out = runs.map(r => `<b>${esc(r.label)}</b>: ${fmt(r.prefix_similarity[0].cosine)} no 1º nível (${signed(r.prefix_similarity[0].cosine - base)} sobre filmes aleatórios), ${fmt(r.prefix_similarity[r.L - 1].cosine)} no último.`);
+    return out;
+  },
+});
+
+defineCard("sem", {
+  id: "lift", title: "Ganho de cada token",
+  what: "Coesão real menos coesão com o token sorteado.",
+  read: "Acima de zero, o token carrega semântica. Com poucos filmes em grupo, o valor é ruidoso.",
+  calc: `<p>Para isolar o efeito do token, sorteamos o k-ésimo token entre os filmes que já dividem os k−1 anteriores. Os grupos ficam do mesmo tamanho, mas a divisão vira aleatória.</p><p class="formula">ganho = cosseno real − cosseno com o token embaralhado</p>`,
+  draw(host, runs) {
+    chart(host, {
+      kind: "line", x: { labels: levelLabels(runs), title: "nível do SID" }, y: { fmt: v => fmt(v, 2), title: "ganho de cosseno" },
+      refs: [{ y: 0, label: "sem ganho" }],
+      series: perLevel(runs, (r, k) => r.prefix_similarity[k].lift),
+      tip: levelTip(runs, (r, k) => r.prefix_similarity[k].lift, v => signed(v), (r, k) => ` · ${pct(r.prefix_similarity[k].items_in_shared_groups, 0)} com grupo`),
+    });
+  },
+  reading: runs => runs.map(r => {
+    const ok = r.prefix_similarity.filter(p => p.lift >= 0.01 && p.items_in_shared_groups >= 0.2).length;
+    return `<b>${esc(r.label)}</b>: ganho confiável em ${plural(ok, "nível", "níveis")} de ${r.L} (${r.prefix_similarity.map(p => signed(p.lift)).join(", ")}).`;
+  }),
+});
+
+defineCard("sem", {
+  id: "neighbors", title: "Vizinhos que dividem o prefixo",
+  what: "Dos 10 filmes mais parecidos, quantos têm o mesmo prefixo.",
+  read: "Compare com o acaso (no tooltip): grupos grandes acertam mais por acaso.",
+  calc: `<p>Para cada filme, pegamos os 10 mais parecidos no embedding original (cosseno). Contamos quantos têm o mesmo prefixo de k tokens e tiramos a média sobre os filmes.</p><p>Acaso = fração esperada se os 10 vizinhos fossem filmes sorteados (depende do tamanho dos grupos).</p>`,
+  draw(host, runs) {
+    chart(host, {
+      kind: "line", x: { labels: levelLabels(runs), title: "nível do SID" }, y: { min: 0, fmt: v => pct(v, 0) },
+      series: perLevel(runs, (r, k) => r.neighbor_agreement[k].neighbors_sharing),
+      tip: levelTip(runs, (r, k) => r.neighbor_agreement[k].neighbors_sharing, v => pct(v), (r, k) => ` · acaso ${pct(r.neighbor_agreement[k].expected_random)}`),
+    });
+  },
+  reading: runs => runs.map(r => `<b>${esc(r.label)}</b>: ${pct(r.d.nn1, 0)} dos vizinhos no mesmo 1º token, ${fmt(r.d.nn1 / r.d.nn1Rand, 0)}× o acaso (${pct(r.d.nn1Rand)}).`),
+});
+
+defineCard("quant", {
+  id: "residual", title: "Resíduo de z após cada nível",
+  what: "Quanto de z falta descrever após cada nível.",
+  read: "O 1º nível deve remover a maior parte; os seguintes refinam.",
+  calc: `<p>O encoder comprime o embedding do filme em z (D dimensões). O nível 1 escolhe o código c₁ mais próximo de z e guarda o resto r₁ = z − c₁; o nível 2 aproxima r₁, e assim por diante.</p><p class="formula">resíduo após l = média ‖r_l‖ ÷ média ‖z‖</p><p>Calculado nos filmes de validação, na última época. Ao quadrado, dá aproximadamente a energia de z que sobra (35% ≈ 12%). Mede a quantização; a perda em relação ao embedding original é a reconstrução.</p>`,
+  draw(host, runs) {
+    const maxL = Math.max(...runs.map(r => r.L));
+    chart(host, {
+      kind: "line", x: { labels: ["z", ...Array.from({ length: maxL }, (_, k) => `${k + 1}º`)], title: "após o nível" }, y: { min: 0, max: 1, fmt: v => pct(v, 0) },
+      series: runs.map(r => ({ color: colorOf(r), dots: true, points: [[0, 1], ...r.metrics.residual_ratio.map((v, k) => [k + 1, v])] })),
+      tip: i => tipRows(i === 0 ? "vetor latente z" : `após o ${i}º nível`, runs.filter(r => i <= r.L).map(r => ({ color: colorOf(r), value: pct(i === 0 ? 1 : r.metrics.residual_ratio[i - 1]), label: r.label }))),
+    });
+  },
+  reading: runs => runs.map(r => {
+    const rr = r.metrics.residual_ratio;
+    return `<b>${esc(r.label)}</b>: o 1º nível remove ${pct(1 - rr[0], 0)} de z; sobram ${pct(rr[rr.length - 1], 0)} no fim.`;
+  }),
+});
+
+defineCard("quant", {
+  id: "usage", title: "Uso efetivo dos codebooks", legend: boxLegend,
+  what: "Uniformidade do uso dos códigos em cada nível.",
+  read: "Abaixo de 50%, poucos códigos concentram os filmes.",
+  calc: `<p>Códigos efetivos = exp(entropia da distribuição de filmes pelos códigos), no catálogo inteiro: quantos códigos dariam o mesmo espalhamento se o uso fosse uniforme.</p><p class="formula">uso efetivo = códigos efetivos ÷ K</p>`,
+  draw(host, runs) {
+    chart(host, {
+      kind: "bar", x: { labels: levelLabels(runs), title: "nível do SID" }, y: { min: 0, max: 1, fmt: v => pct(v, 0) },
+      series: runs.map(r => ({ color: colorOf(r), points: r.codebook.map((c, k) => [k, c.effective_codes / r.K]) })),
+      tip: k => tipRows(`${k + 1}º nível`, runs.filter(r => k < r.L).map(r => ({ color: colorOf(r), value: pct(r.codebook[k].effective_codes / r.K, 0), label: `${r.label} · ${fmt(r.codebook[k].effective_codes, 0)} de ${r.K}` }))),
+    });
+  },
+  reading: runs => runs.map(r => `<b>${esc(r.label)}</b>: pior nível com ${pct(r.d.effUse, 0)} de uso efetivo (nível ${r.d.effWorstLevel + 1})${r.d.effUse < 0.5 ? " — concentrado" : ""}.`),
+});
+
+defineCard("quant", {
+  id: "hist", title: "Filmes por código", wide: true,
+  what: "Quantos filmes caem em cada código, por nível.",
+  read: "Alturas parecidas = uso equilibrado. Tracejado = média.",
+  calc: `<p>Contagem de filmes do catálogo inteiro por código, separadamente em cada nível.</p>`,
+  legend: runs => `<div class="focus-pick">Modelo: ${runs.map(r => `<button type="button" data-focus="${esc(r.name)}" aria-pressed="${r.name === state.focusRun}"><i class="key" style="--c:${colorOf(r)}"></i>${esc(r.label)}</button>`).join("")}</div>`,
+  draw(host, runs, ds) {
+    const r = runByName(state.focusRun) || runs[0];
+    host.innerHTML = "";
+    host.style.display = "grid";
+    host.style.gridTemplateColumns = "repeat(auto-fit, minmax(240px, 1fr))";
+    host.style.gap = "12px";
+    // all boxes go in first so each chart is drawn at its final column width
+    const boxes = r.usage_counts.map((_, level) => {
+      const box = el("div", { style: "min-width:0" }, `<div class="small" style="font-weight:600">Nível ${level + 1}</div><div class="chart"></div>`);
+      host.append(box);
+      return box;
+    });
+    r.usage_counts.forEach((counts, level) => {
+      const mean = ds.N / counts.length;
+      chart(boxes[level].querySelector(".chart"), {
+        kind: "bar", height: 150, x: { labels: counts.map((_, c) => c), title: "código" }, y: { min: 0, fmt: v => int(v) },
+        refs: [{ y: mean }],
+        series: [{ color: colorOf(r), points: counts.map((v, c) => [c, v]) }],
+        tip: c => tipRows(`código ${c}`, [{ color: colorOf(r), value: plural(counts[c], "filme"), label: `média ${fmt(mean, 1)}` }]),
+      });
+    });
+  },
+  reading(runs) {
+    const r = runByName(state.focusRun) || runs[0];
+    return r.usage_counts.map((counts, level) => {
+      const max = Math.max(...counts), used = counts.filter(c => c > 0).length;
+      return `<b>${esc(r.label)}</b>, nível ${level + 1}: ${used} de ${counts.length} códigos usados; o maior tem ${plural(max, "filme")} (${fmt(max / (state.ds.N / counts.length), 1)}× a média).`;
+    });
+  },
+});
+
+function historyCard(id, title, column, opts) {
+  defineCard("train", {
+    id, title, what: opts.what, read: opts.read, calc: opts.calc,
+    draw(host, runs) {
+      const valueFmt = opts.percent ? (v => pct(v)) : (v => fmt(v, 4));
+      chart(host, {
+        kind: "line", x: { title: "época" }, y: { fmt: opts.percent ? (v => pct(v, 0)) : (v => fmt(v, 2)), min: opts.yMin },
+        series: runs.map(r => ({ color: colorOf(r), points: r.history.epoch.map((e, j) => [e, r.history[column][j]]) })),
+        markers: opts.best ? runs.map(r => ({ x: r.metrics.best_epoch, y: r.metrics.best_val_recon, color: colorOf(r) })) : [],
+        snap: x => Math.round(x),
+        tip: epoch => tipRows(`época ${epoch}`, runs.map(r => {
+          const ep = r.history.epoch;
+          let j = 0;
+          while (j < ep.length - 1 && Math.abs(ep[j + 1] - epoch) <= Math.abs(ep[j] - epoch)) j++;
+          return { color: colorOf(r), value: valueFmt(r.history[column][j]), label: `${r.label} (ép. ${ep[j]})` };
+        })),
+      });
+    },
+    reading: opts.reading,
+  });
+}
+historyCard("valrecon", "Reconstrução na validação", "val_recon_loss", {
+  best: true,
+  what: "Variância não reconstruída na validação. Círculo = melhor época.",
+  read: "Subir depois do círculo indica overfitting.",
+  calc: `<p>MSE entre o embedding padronizado e a saída do decoder. O embedding é padronizado com uma escala única, então prever a média do catálogo dá exatamente 1,0: o valor é a fração da variância não reconstruída.</p><p>Validação = 5% dos filmes, separados antes do treino.</p>`,
+  reading: runs => runs.map(r => `<b>${esc(r.label)}</b>: melhor ${fmt(r.d.recon)} na época ${r.metrics.best_epoch}; final ${fmt(r.metrics.last_val_recon)} (${r.d.gap > 0.02 ? `<span class="status bad">overfitting ${signed(r.d.gap)}</span>` : `<span class="status ok">estável ${signed(r.d.gap)}</span>`}).`),
+});
+historyCard("trainrecon", "Reconstrução no treino", "train_recon_loss", {
+  what: "A mesma medida, no treino.",
+  read: "Distância grande para a validação indica memorização.",
+  calc: `<p>Mesma fórmula da validação, média dos lotes de treino em cada época.</p>`,
+  reading: runs => runs.map(r => `<b>${esc(r.label)}</b>: treino termina em ${fmt(r.metrics.last_train_recon)}, ${fmt(r.metrics.last_val_recon - r.metrics.last_train_recon)} abaixo da validação.`),
+});
+historyCard("uniqueval", "IDs únicos durante o treino", "val_unique_ids", {
+  percent: true, yMin: 0,
+  what: "SIDs distintos na validação, por época.",
+  read: "Mostra quando o modelo passa a separar os filmes.",
+  calc: `<p class="formula">SIDs distintos ÷ filmes de validação</p>`,
+  reading: runs => runs.map(r => `<b>${esc(r.label)}</b>: ${pct(r.history.val_unique_ids[r.history.val_unique_ids.length - 1])} na validação; ${pct(r.d.unique)} no catálogo inteiro.`),
+});
+historyCard("vq", "Loss de quantização (treino)", "train_vq_loss", {
+  what: "Distância entre a saída do encoder e os códigos escolhidos.",
+  read: "Perto de zero o tempo todo sugere colapso.",
+  calc: `<p>Soma, nos níveis, de ‖sg(r) − c‖² + β‖r − sg(c)‖² (codebook loss + commitment), com sg = sem gradiente.</p>`,
+  reading: runs => runs.map(r => `<b>${esc(r.label)}</b>: termina em ${fmt(r.history.train_vq_loss[r.history.train_vq_loss.length - 1], 4)}.`),
+});
+
+// ================= evaluation: rendering =================
+const TABLE_COLS = [
+  { key: "label", label: "Modelo", value: r => r.label, cell: r => `<span class="swatch" style="--c:${state.selected.includes(r.name) ? colorOf(r) : "transparent"}"></span>${esc(r.label)}`, cls: "label" },
+  { key: "capacity", metric: "capacity", value: r => r.d.capacity, cell: r => times(r.d.capacity) },
+  { key: "unique", metric: "unique", value: r => r.d.unique, cell: r => pct(r.d.unique) },
+  { key: "maxColl", metric: "maxColl", value: r => -r.d.maxColl, cell: r => int(r.d.maxColl) },
+  { key: "depth", metric: "depth", value: r => r.d.depth, cell: r => fmt(r.d.depth, 2) },
+  { key: "lift1", metric: "lift1", value: r => r.d.lift1, cell: r => signed(r.d.lift1) },
+  { key: "nn1", metric: "nn1", value: r => r.d.nn1, cell: r => `${pct(r.d.nn1, 0)} <span class="muted small">(${pct(r.d.nn1Rand)})</span>` },
+  { key: "recon", metric: "recon", value: r => -r.d.recon, cell: r => fmt(r.d.recon) },
+  { key: "gap", metric: "gap", value: r => -r.d.gap, cell: r => r.d.gap > 0.02 ? `<span class="status bad">▲ ${signed(r.d.gap)}</span>` : `<span class="status ok">✓ ${signed(r.d.gap)}</span>` },
+  { key: "vocab", metric: "vocab", value: r => -r.d.vocab, cell: r => int(r.d.vocab) },
+  { key: "effUse", metric: "effUse", value: r => r.d.effUse, cell: r => pct(r.d.effUse, 0) },
+];
+
+function renderModelTable() {
+  const ds = state.ds;
+  const q = normalize(state.filter.trim());
+  const rows = ds.runs.filter(r => !q || normalize(`${r.label} ${r.name}`).includes(q));
+  const col = TABLE_COLS.find(c => c.key === state.sort.key) || TABLE_COLS[0];
+  rows.sort((a, b) => {
+    const va = col.value(a), vb = col.value(b);
+    return (typeof va === "string" ? va.localeCompare(vb, "pt-BR", { numeric: true }) : (vb - va)) * state.sort.dir;
+  });
+  const head = `<thead><tr><th scope="col"><span class="sr-only" style="position:absolute;left:-9999px">Selecionar</span></th>${TABLE_COLS.map(c => {
+    const label = c.metric ? METRICS[c.metric].label : c.label;
+    const arrow = c.key === state.sort.key ? `<span class="arrow">${state.sort.dir === 1 ? "▼" : "▲"}</span>` : "";
+    return `<th scope="col" class="sortable" data-sort="${c.key}" ${c.metric ? `data-metric="${c.metric}"` : ""} tabindex="0" aria-sort="${c.key === state.sort.key ? (state.sort.dir === 1 ? "descending" : "ascending") : "none"}">${label}${arrow}</th>`;
+  }).join("")}</tr></thead>`;
+  const body = rows.map(r => {
+    const sel = state.selected.includes(r.name);
+    return `<tr data-run="${esc(r.name)}" class="${sel ? "sel" : ""}" title="${esc(r.name)}"><td><input type="checkbox" ${sel ? "checked" : ""} aria-label="Selecionar ${esc(r.label)}"></td>${TABLE_COLS.map(c => `<td class="num ${c.cls || ""}">${c.cell(r)}</td>`).join("")}</tr>`;
+  }).join("") || `<tr><td colspan="${TABLE_COLS.length + 1}" class="muted" style="text-align:center">Nenhum modelo corresponde ao filtro.</td></tr>`;
+  $("model-table").innerHTML = head + `<tbody>${body}</tbody>`;
+  $("sel-count").textContent = `${state.selected.length} de ${MAX_SEL} selecionados · ${plural(ds.runs.length, "modelo")} no dataset`;
+}
+
+function renderChips() {
+  const runs = selRuns();
+  $("sel-chips").innerHTML = runs.length
+    ? runs.map(r => `<span class="chip"><i class="key" style="--c:${colorOf(r)}"></i>${esc(r.label)}<button type="button" data-unselect="${esc(r.name)}" aria-label="Remover ${esc(r.label)}">×</button></span>`).join("")
+    : `<span class="small muted">Nenhum modelo selecionado: marque modelos na tabela.</span>`;
+}
+
+function renderHighlights() {
+  $("highlights").innerHTML = highlightsOf(state.ds).map(h => `<button type="button" class="hl" data-pick="${esc(h.r.name)}" data-metric="${h.key}">
+    <span class="k">${esc(h.title)}</span><span class="v">${esc(h.r.label)}</span><span class="d">${esc(h.value)} · ${esc(h.desc)}</span></button>`).join("");
+}
+
+function renderFichas(runs) {
+  $("fichas").innerHTML = runs.length ? runs.map(r => {
+    const { pros, cons, when } = prosCons(r, state.ds);
+    const d = r.d;
+    return `<article class="ficha" style="--c:${colorOf(r)}">
+      <header><h3><span class="swatch"></span>${esc(r.label)}</h3><span class="small muted mono">${esc(r.name)}</span></header>
+      <dl>
+        <div><dt data-metric="capacity">Capacidade</dt><dd>${times(d.capacity)}</dd></div>
+        <div><dt data-metric="unique">IDs únicos</dt><dd>${pct(d.unique)}</dd></div>
+        <div><dt data-metric="depth">Níveis c/ grupo</dt><dd>${fmt(d.depth, 2)}</dd></div>
+        <div><dt data-metric="lift1">Ganho 1º token</dt><dd>${signed(d.lift1)}</dd></div>
+        <div><dt data-metric="recon">Reconstrução</dt><dd>${fmt(d.recon)}</dd></div>
+        <div><dt data-tip="Tokens por SID. O +1 é o token de desempate, usado só quando há colisão.">Tamanho do SID</dt><dd>${r.L}${d.collisions > 0 ? " + 1" : ""} tokens</dd></div>
+      </dl>
+      <div class="pc">
+        <div class="pro"><h4>✓ Prós</h4><ul>${pros.map(p => `<li>${esc(p)}</li>`).join("")}</ul></div>
+        <div class="con"><h4>✗ Contras</h4><ul>${cons.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>
+      </div>
+      <p class="when"><b>Quando escolher:</b> ${esc(when)}</p>
+    </article>`;
+  }).join("") : `<div class="empty-state">Selecione modelos na tabela para ver prós e contras.</div>`;
+}
+
+function renderCards() {
+  const runs = selRuns();
+  if (!state.focusRun || !state.selected.includes(state.focusRun)) state.focusRun = state.selected[0] || null;
+  for (const section of ["overview", "hier", "sem", "quant", "train"]) {
+    const container = $(`cards-${section}`);
+    container.innerHTML = "";
+    for (const card of CARDS.filter(c => c.section === section)) {
+      const needsSel = card.id !== "tradeoff";
+      const node = el("article", { class: "card", id: `card-${card.id}`, style: card.wide && section !== "overview" ? "grid-column: 1 / -1" : null }, `
+        <header style="display:grid;gap:4px"><h3>${esc(card.title)}</h3><p class="what">${esc(card.what)}</p></header>
+        <div class="legend"></div>
+        <div class="chart-host"></div>
+        <p class="howto"><b>Como ler:</b> ${esc(card.read)}</p>
+        <div class="reading"><ul></ul></div>
+        <details class="calc"><summary>Como é calculado</summary>${card.calc}</details>`);
+      container.append(node);
+      if (needsSel && !runs.length) {
+        node.querySelector(".chart-host").innerHTML = `<div class="empty-state">Selecione ao menos um modelo na tabela de modelos.</div>`;
+        node.querySelector(".reading").remove();
+        continue;
+      }
+      node.querySelector(".legend").innerHTML = card.legend ? card.legend(runs) : lineLegend(runs);
+      const host = node.querySelector(".chart-host");
+      if (card.id !== "hist") host.className = "chart";
+      card.draw(host, runs, state.ds);
+      const lines = card.reading(runs, state.ds);
+      node.querySelector(".reading ul").innerHTML = lines.map(l => `<li>${l}</li>`).join("");
+    }
+  }
+}
+
+function renderEval() {
+  if (!state.ds) return;
+  renderModelTable();
+  renderChips();
+  renderHighlights();
+  renderFichas(selRuns());
+  renderCards();
+}
+
+// ================= exploration =================
+const STOPWORDS = new Set(`a about above after again against all almost along also although always am among an and another any
+are around as at away back be became because become becomes been before begins being below between both but by can cannot
+could did do does doing down during each either else even ever every few find finds first for from further get gets getting
+give given gives go goes going got had has have having he her here hers herself him himself his how however i if in into is
+it its itself just last later least less let like made make makes making many may me meanwhile might more most much must my
+myself never new next no nor not now of off often on once one only onto or other others our ours ourselves out over own
+part rather s same see seems set she should since so some soon still such take takes taking than that the their theirs them
+themselves then there these they this those though three through throughout thus to together too toward towards two under
+until up upon us very via was way we well were what when where whether which while who whom whose why will with within
+without would yet you your yours yourself yourselves film films movie story stories life lives world man men woman women
+young old year years time day days home help helps tries try trying named called name live lives living become begin
+discovers discover finds decides soon both back their after must`.split(/\s+/));
+
+function ensureIndex(ds) {
+  if (ds.index) return ds.index;
+  const { items, N } = ds;
+  const tokens = [], docFreq = new Map(), genreFreq = new Map();
+  for (let i = 0; i < N; i++) {
+    const text = `${items.title[i]} ${(items.overview && items.overview[i]) || ""}`;
+    const words = new Set((normalize(text).match(/[a-z][a-z'-]+/g) || [])
+      .map(w => w.replace(/'s$/, "").replace(/^'+|'+$/g, ""))
+      .filter(w => w.length > 2 && !STOPWORDS.has(w)));
+    tokens.push([...words]);
+    for (const w of words) docFreq.set(w, (docFreq.get(w) || 0) + 1);
+    for (const g of genresOf(ds, i)) genreFreq.set(g, (genreFreq.get(g) || 0) + 1);
+  }
+  ds.index = { tokens, docFreq, genreFreq, search: items.title.map(normalize) };
+  return ds.index;
+}
+const genresOf = (ds, i) => ds.items.genres[i] ? ds.items.genres[i].split("|") : [];
+const movieLabel = (ds, i) => `${ds.items.title[i]}${ds.items.year[i] ? ` (${ds.items.year[i]})` : ""}`;
+
+function topWords(ds, members, limit) {
+  const { tokens, docFreq } = ensureIndex(ds);
+  const n = members.length, counts = new Map();
+  for (const i of members) for (const w of tokens[i]) counts.set(w, (counts.get(w) || 0) + 1);
+  const minCount = n >= 6 ? 2 : 1, scored = [];
+  for (const [w, c] of counts) {
+    if (c < minCount) continue;
+    const pGroup = c / n, pAll = docFreq.get(w) / ds.N;
+    scored.push({ w, c, score: pGroup * Math.log(pGroup / pAll) });  // weighted log-lift
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+function topGenres(ds, members, limit) {
+  const { genreFreq } = ensureIndex(ds);
+  const counts = new Map();
+  for (const i of members) for (const g of genresOf(ds, i)) counts.set(g, (counts.get(g) || 0) + 1);
+  return [...counts].map(([g, c]) => ({ g, share: c / members.length, lift: (c / members.length) / (genreFreq.get(g) / ds.N) }))
+    .sort((a, b) => b.share - a.share).slice(0, limit);
+}
+
+function ensureGroups(r, N) {
+  if (r.groups) return r;
+  r.width = r.L + 1;
+  r.sid = i => r.sids.slice(i * r.width, (i + 1) * r.width);
+  r.groups = [];
+  for (let k = 1; k <= r.L; k++) {
+    const map = new Map();
+    for (let i = 0; i < N; i++) {
+      const key = r.sids.slice(i * r.width, i * r.width + k).join(".");
+      let list = map.get(key);
+      if (!list) map.set(key, list = []);
+      list.push(i);
+    }
+    r.groups.push(map);
+  }
+  return r;
+}
+const groupOf = (r, prefix) => prefix.length === 0 ? [] : (r.groups[prefix.length - 1].get(prefix.join(".")) || []);
+const groupCosine = (ds, r, prefix) => prefix.length === 0 ? ds.meta.baseline_cosine : r.group_cosines[prefix.length - 1][prefix.join(".")];
+function childrenOf(r, prefix) {
+  const k = prefix.length + 1;
+  if (k > r.L) return [];
+  const head = prefix.join("."), result = [];
+  for (const [key, members] of r.groups[k - 1]) {
+    const cut = key.lastIndexOf(".");
+    if ((cut < 0 ? "" : key.slice(0, cut)) === head) result.push({ code: Number(key.slice(cut + 1)), members });
+  }
+  return result.sort((a, b) => b.members.length - a.members.length);
+}
+function sidHtml(tokens, L, sharedLength = null) {
+  return `<span class="sid">${tokens.map((t, level) => {
+    if (level >= L) return `<span class="tok collision" title="desempate de colisão (sem significado)">${t}</span>`;
+    const on = sharedLength === null || level < sharedLength;
+    return `<span class="tok${on ? " on" : ""}" style="--lc:${levelVar(level)}" title="token ${level + 1}">${t}</span>`;
+  }).join("")}</span>`;
+}
+
+const exRun = () => runByName(state.exploreRun);
+
+function renderExploreBar() {
+  const ds = state.ds;
+  const sel = selRuns(), others = ds.runs.filter(r => !state.selected.includes(r.name));
+  const opt = r => `<option value="${esc(r.name)}" ${r.name === state.exploreRun ? "selected" : ""}>${esc(r.label)}</option>`;
+  $("explore-run").innerHTML = (sel.length ? `<optgroup label="Selecionados na avaliação">${sel.map(opt).join("")}</optgroup>` : "")
+    + (others.length ? `<optgroup label="${sel.length ? "Outros" : "Modelos"}">${others.map(opt).join("")}</optgroup>` : "");
+  const r = exRun();
+  $("level-legend").innerHTML = Array.from({ length: r.L }, (_, k) => `<span style="--lc:${levelVar(k)}"><i></i>token ${k + 1}</span>`).join("")
+    + `<span><span class="tok collision">n</span>desempate</span>`;
+}
+
+function setPrefix(prefix) {
+  state.treePrefix = prefix;
+  renderTree();
+  $("pane-tokens").scrollTop = 0;
+}
+
+function renderTree() {
+  const ds = state.ds, r = exRun();
+  const crumbs = $("crumbs");
+  crumbs.innerHTML = "";
+  const root = el("button", { type: "button", class: state.treePrefix.length === 0 ? "current" : null }, "todos");
+  root.addEventListener("click", () => setPrefix([]));
+  crumbs.append(root);
+  state.treePrefix.forEach((code, level) => {
+    crumbs.append(el("span", { class: "sep" }, "›"));
+    const b = el("button", { type: "button", class: level === state.treePrefix.length - 1 ? "current" : null, style: `color:${levelVar(level)}`, title: `token ${level + 1}` }, String(code));
+    b.addEventListener("click", () => setPrefix(state.treePrefix.slice(0, level + 1)));
+    crumbs.append(b);
+  });
+
+  const kids = childrenOf(r, state.treePrefix);
+  const childBox = $("children");
+  if (kids.length) {
+    const level = state.treePrefix.length;
+    childBox.innerHTML = `<div class="block"><h4 style="color:${levelVar(level)}">Token ${level + 1}: ${plural(kids.length, "código")}${level ? " dentro deste grupo" : ""}</h4><ul class="code-list"></ul></div>`;
+    const list = childBox.querySelector(".code-list");
+    for (const { code, members } of kids.slice(0, 600)) {
+      const li = el("li", {}, `<button type="button"><span class="mono" style="color:${levelVar(level)};font-weight:600">${code}</span><span class="n">${plural(members.length, "filme")}</span><span class="w">${esc(topWords(ds, members, 4).map(w => w.w).join(", "))}</span></button>`);
+      li.querySelector("button").addEventListener("click", () => setPrefix([...state.treePrefix, code]));
+      list.append(li);
+    }
+  } else {
+    childBox.innerHTML = `<p class="hint" style="margin-top:14px">Último nível: o prefixo já usa os ${r.L} tokens.</p>`;
+  }
+  renderGroup();
+}
+
+function renderGroup() {
+  const ds = state.ds, r = exRun(), prefix = state.treePrefix;
+  const view = $("group-view");
+  if (!prefix.length) { view.innerHTML = `<p class="hint" style="margin-top:14px">Escolha um código acima para ver o grupo.</p>`; return; }
+  const members = groupOf(r, prefix);
+  const genres = topGenres(ds, members, 6), words = topWords(ds, members, 14), shown = members.slice(0, 300);
+  view.innerHTML = `
+    <div class="block">
+      <h4>Grupo ${sidHtml(prefix, r.L)}</h4>
+      <div class="stats">
+        <span><b>${int(members.length)}</b> filme${members.length === 1 ? "" : "s"}</span>
+        ${members.length > 1 ? `<span data-tip="Cosseno médio entre os filmes deste grupo, no embedding original.">coesão <b>${fmt(groupCosine(ds, r, prefix))}</b></span>
+        <span data-tip="Coesão do grupo do nível anterior. Se este grupo é mais coeso que o pai, o token juntou filmes mais parecidos.">grupo pai <b>${fmt(groupCosine(ds, r, prefix.slice(0, -1)))}</b></span>
+        <span data-tip="Cosseno médio entre dois filmes quaisquer do catálogo.">aleatórios <b>${fmt(ds.meta.baseline_cosine)}</b></span>` : `<span class="hint">prefixo exclusivo: já identifica o filme</span>`}
+      </div>
+    </div>
+    ${words.length ? `<div class="block"><h4>Palavras características</h4><div class="words">${words.map(w => `<span class="word">${esc(w.w)}<small>${w.c}</small></span>`).join("")}</div></div>` : ""}
+    ${genres.length ? `<div class="block"><h4>Gêneros</h4><div class="bars">${genres.map(g => `
+      <div class="bar-row"><span>${esc(g.g)}</span><div class="bar-track"><div class="bar-fill" style="width:${(100 * g.share).toFixed(1)}%"></div></div><span class="val">${pct(g.share, 0)} · ×${fmt(g.lift, 1)}</span></div>`).join("")}</div></div>` : ""}
+    <div class="block">
+      <h4>Filmes${members.length > shown.length ? ` (${shown.length} de ${int(members.length)})` : ""}</h4>
+      <ul class="movie-list">${shown.map(i => `<li><button type="button" data-movie="${i}" class="${i === state.currentMovie ? "active" : ""}"><span class="t">${esc(movieLabel(ds, i))}</span><span class="g">${esc(genresOf(ds, i).join(", "))}</span>${sidHtml(r.sid(i), r.L)}</button></li>`).join("")}</ul>
+    </div>`;
+}
+
+function sharedPrefixLength(a, b, L) { let k = 0; while (k < L && a[k] === b[k]) k++; return k; }
+
+function showMovie(i) {
+  const ds = state.ds, r = exRun();
+  state.currentMovie = i;
+  document.querySelectorAll("#group-view [data-movie]").forEach(b => b.classList.toggle("active", Number(b.dataset.movie) === i));
+  const sid = r.sid(i);
+  const prefixRows = Array.from({ length: r.L }, (_, k) => {
+    const prefix = sid.slice(0, k + 1), n = groupOf(r, prefix).length;
+    return `<div class="prefix-row">${sidHtml(prefix, r.L)}<span>${plural(n, "filme")}${n > 1 ? ` · coesão ${fmt(groupCosine(ds, r, prefix))}` : ""}</span>
+      ${n > 1 ? `<button type="button" class="link-btn" data-prefix="${prefix.join(".")}">filtrar por este prefixo</button>` : ""}</div>`;
+  }).join("");
+
+  const K = ds.K_NN, rows = [], sharedCounts = Array(r.L + 1).fill(0);
+  for (let j = 0; j < K; j++) {
+    const other = ds.neighbors[i * K + j], otherSid = r.sid(other), shared = sharedPrefixLength(sid, otherSid, r.L);
+    for (let k = 1; k <= shared; k++) sharedCounts[k]++;
+    rows.push(`<tr><td class="num">${j + 1}</td>
+      <td><button type="button" class="link-btn" data-movie="${other}">${esc(movieLabel(ds, other))}</button><br><span class="sub">${esc(genresOf(ds, other).join(", "))}</span></td>
+      <td class="num">${fmt(ds.sims[i * K + j])}</td><td>${sidHtml(otherSid, r.L, shared)}</td><td class="num">${shared}</td></tr>`);
+  }
+  const summary = Array.from({ length: r.L }, (_, k) => `${sharedCounts[k + 1]} dividem ${k === 0 ? "o 1º token" : `os ${k + 1} primeiros`}`).join(", ");
+
+  // same movie under the other selected models
+  const compare = selRuns().filter(o => o.name !== r.name);
+  const compareRows = compare.map(o => {
+    ensureGroups(o, ds.N);
+    const s = o.sid(i);
+    const nn = Array.from({ length: K }, (_, j) => sharedPrefixLength(s, o.sid(ds.neighbors[i * K + j]), o.L) >= 1).filter(Boolean).length;
+    return `<tr><td class="label" style="text-align:left"><i class="key" style="--c:${colorOf(o)}"></i> ${esc(o.label)}</td><td>${sidHtml(s, o.L)}</td>
+      <td class="num">${int(groupOf(o, s.slice(0, 1)).length)}</td><td class="num">${nn} de ${K}</td></tr>`;
+  }).join("");
+
+  const overview = ds.items.overview && ds.items.overview[i] ? ds.items.overview[i] : "";
+  const clip = text => `${esc(text)}${text.length >= ds.meta.overview_chars ? "…" : ""}`;
+  $("movie-view").innerHTML = `
+    <div class="movie-card block">
+      <h3>${esc(movieLabel(ds, i))}</h3>
+      <p class="meta">${esc(genresOf(ds, i).join(", ") || "sem gêneros")} · movieId ${ds.items.movieId[i]}</p>
+      <div>${sidHtml(sid, r.L)} <span class="small muted mono">${esc(r.label)}</span></div>
+      ${overview ? `<p class="overview">${clip(overview)}</p>` : ""}
+    </div>
+    <div class="block"><h4>Filmes com o mesmo prefixo</h4><div class="prefix-rows">${prefixRows}</div></div>
+    <div class="block">
+      <h4>${K} vizinhos mais próximos no embedding</h4>
+      <p class="hint">Dos ${K}: ${summary}.</p>
+      <div class="table-scroll"><table class="nn-table"><thead><tr><th>#</th><th>Filme</th><th data-tip="Cosseno entre os embeddings originais dos dois filmes.">Cosseno</th><th>SID</th><th data-tip="Quantos tokens iniciais o vizinho divide com o filme.">Prefixo comum</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>
+    </div>
+    ${compare.length ? `<div class="block">
+      <h4>Este filme nos outros modelos selecionados</h4>
+      <p class="hint">Mesmo filme, outros SIDs. "Vizinhos no 1º token" conta quantos dos ${K} vizinhos caem no mesmo 1º token em cada modelo.</p>
+      <div class="table-scroll"><table class="nn-table"><thead><tr><th style="text-align:left">Modelo</th><th style="text-align:left">SID</th><th data-tip="Quantos filmes têm o mesmo 1º token neste modelo.">Grupo do 1º token</th><th>Vizinhos no 1º token</th></tr></thead><tbody>${compareRows}</tbody></table></div>
+    </div>` : ""}`;
+  $("pane-movies").scrollTop = 0;
+}
+
+function setupSearch() {
+  const input = $("movie-search"), results = $("movie-results");
+  let hits = [], hl = 0;
+  const pick = i => { results.innerHTML = ""; input.value = state.ds.items.title[i]; showMovie(i); };
+  const paint = () => results.querySelectorAll("button").forEach((b, j) => b.classList.toggle("hl", j === hl));
+  input.addEventListener("input", () => {
+    const ds = state.ds, q = normalize(input.value.trim());
+    if (q.length < 2) { results.innerHTML = ""; hits = []; return; }
+    const idx = ensureIndex(ds).search;
+    hits = [];
+    for (let i = 0; i < ds.N && hits.length < 300; i++) if (idx[i].includes(q)) hits.push(i);
+    hits.sort((a, b) => (idx[b].startsWith(q) - idx[a].startsWith(q)) || idx[a].length - idx[b].length);
+    hits = hits.slice(0, 15);
+    hl = 0;
+    results.innerHTML = hits.length ? hits.map(i => `<li><button type="button" data-hit="${i}">${esc(movieLabel(ds, i))}</button></li>`).join("") : `<li class="none">Nenhum filme encontrado.</li>`;
+    paint();
+  });
+  results.addEventListener("click", e => { const b = e.target.closest("[data-hit]"); if (b) pick(Number(b.dataset.hit)); });
+  input.addEventListener("keydown", e => {
+    if (!hits.length || !results.children.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); hl = Math.min(hits.length - 1, hl + 1); paint(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); hl = Math.max(0, hl - 1); paint(); }
+    else if (e.key === "Enter") { e.preventDefault(); pick(hits[hl]); }
+    else if (e.key === "Escape") results.innerHTML = "";
+  });
+  document.addEventListener("click", e => { if (!e.target.closest(".search-box")) results.innerHTML = ""; });
+}
+
+function renderExplore() {
+  const ds = state.ds;
+  if (!state.exploreRun || !runByName(state.exploreRun)) state.exploreRun = state.selected[0] || ds.runs[0].name;
+  const r = ensureGroups(exRun(), ds.N);
+  ensureIndex(ds);
+  const valid = [];
+  for (const code of state.treePrefix) { if (!groupOf(r, [...valid, code]).length) break; valid.push(code); }
+  state.treePrefix = valid;
+  if (state.currentMovie === null || state.currentMovie >= ds.N) {
+    const toy = ds.items.title.findIndex(t => t === "Toy Story");
+    state.currentMovie = toy >= 0 ? toy : 0;
+  }
+  renderExploreBar();
+  renderTree();
+  showMovie(state.currentMovie);
+}
+
+// ================= shell =================
+function setTab(tab, fromHash = false) {
+  state.tab = tab;
+  const isEval = tab === "eval";
+  $("tab-eval").setAttribute("aria-selected", String(isEval));
+  $("tab-explore").setAttribute("aria-selected", String(!isEval));
+  $("tab-eval").tabIndex = isEval ? 0 : -1;
+  $("tab-explore").tabIndex = isEval ? -1 : 0;
+  $("view-eval").hidden = !isEval;
+  $("view-explore").hidden = isEval;
+  hideTip();
+  if (!fromHash) history.replaceState(null, "", isEval ? "#avaliacao" : "#exploracao");
+  store.set({ tab });
+  if (!state.ds) return;
+  if (isEval) { window.scrollTo(0, 0); renderEval(); } else renderExplore();
+}
+
+const SOURCE_LABELS = {
+  tmdb: ["TMDB", "Texto embedado: título, sinopse do TMDB e gêneros."],
+  omdb: ["OMDb", "Texto embedado: título, sinopse do OMDb e gêneros."],
+};
+const sourceLabel = s => (SOURCE_LABELS[s] || [s.toUpperCase(), ""])[0];
+function renderDatasetSeg() {
+  $("dataset-seg").innerHTML = MANIFEST.map(e => `<button type="button" role="radio" aria-checked="${state.ds && state.ds.id === e.id}" data-ds="${esc(e.id)}"
+    data-tip="${esc(`${e.dataset} · ${sourceLabel(e.source)}\n${(SOURCE_LABELS[e.source] || [, ""])[1]}\n${int(e.n_items)} filmes · ${plural(e.n_runs, "modelo")} · ${e.size_mb} MB · gerado em ${e.generated}`)}">
+    <span class="mono">${esc(e.dataset)}</span><small>${esc(sourceLabel(e.source))} · ${plural(e.n_runs, "modelo")}</small></button>`).join("");
+}
+
+function renderFacts() {
+  const ds = state.ds;
+  $("facts").innerHTML = `<span>filmes <b>${int(ds.N)}</b></span><span data-tip="Cosseno médio entre dois filmes quaisquer do catálogo, no embedding original. É a referência de 'nada parecido' nos gráficos.">cosseno aleatório <b>${fmt(ds.meta.baseline_cosine)}</b></span><span>gerado em <b>${esc(ds.meta.generated)}</b></span>`;
+}
+
+async function selectDataset(id) {
+  const entry = MANIFEST.find(e => e.id === id) || MANIFEST[0];
+  if (!CACHE[entry.id]) {
+    $("loading-text").textContent = `Carregando ${entry.dataset} (${entry.size_mb} MB)…`;
+    $("loading").hidden = false;
+    await new Promise(r => setTimeout(r, 30));  // let the overlay paint before parsing
+  }
+  try {
+    state.ds = await loadDataset(entry);
+  } finally {
+    $("loading").hidden = true;
+  }
+  store.set({ dataset: entry.id });
+  const saved = (store.get().selection || {})[entry.id];
+  const valid = (saved || []).filter(n => state.ds.runs.some(r => r.name === n));
+  if (valid.length) setSelection(valid);
+  else setSelection([...new Set(highlightsOf(state.ds).map(h => h.r.name))]);
+  state.exploreRun = null;
+  state.treePrefix = [];
+  state.currentMovie = null;
+  state.focusRun = null;
+  renderDatasetSeg();
+  renderFacts();
+  setTab(state.tab, true);
+}
+
+function setupEvents() {
+  $("dataset-seg").addEventListener("click", e => {
+    const b = e.target.closest("[data-ds]");
+    if (b && (!state.ds || b.dataset.ds !== state.ds.id)) selectDataset(b.dataset.ds).catch(err => showFatal(err.message));
+  });
+  $("tab-eval").addEventListener("click", () => setTab("eval"));
+  $("tab-explore").addEventListener("click", () => setTab("explore"));
+  document.querySelector(".tabs").addEventListener("keydown", e => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") { const next = state.tab === "eval" ? "explore" : "eval"; setTab(next); $(next === "eval" ? "tab-eval" : "tab-explore").focus(); }
+  });
+  window.addEventListener("hashchange", () => setTab(location.hash === "#exploracao" ? "explore" : "eval", true));
+
+  const table = $("model-table");
+  table.addEventListener("click", e => {
+    const th = e.target.closest("th[data-sort]");
+    if (th) {
+      const key = th.dataset.sort;
+      state.sort = { key, dir: state.sort.key === key ? -state.sort.dir : 1 };
+      renderModelTable();
+      return;
+    }
+    const tr = e.target.closest("tr[data-run]");
+    if (tr) toggleRun(tr.dataset.run);
+  });
+  table.addEventListener("keydown", e => {
+    const th = e.target.closest("th[data-sort]");
+    if (th && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); th.click(); }
+  });
+  $("model-filter").addEventListener("input", e => { state.filter = e.target.value; renderModelTable(); });
+  $("sel-clear").addEventListener("click", () => { setSelection([]); renderEval(); });
+  $("sel-suggested").addEventListener("click", () => { setSelection([...new Set(highlightsOf(state.ds).map(h => h.r.name))]); renderEval(); });
+  $("sel-chips").addEventListener("click", e => { const b = e.target.closest("[data-unselect]"); if (b) toggleRun(b.dataset.unselect); });
+  $("highlights").addEventListener("click", e => {
+    const b = e.target.closest("[data-pick]");
+    if (b && !state.selected.includes(b.dataset.pick)) toggleRun(b.dataset.pick);
+  });
+  $("view-eval").addEventListener("click", e => {
+    const b = e.target.closest("[data-focus]");
+    if (b) { state.focusRun = b.dataset.focus; renderCards(); document.getElementById("card-hist").scrollIntoView({ block: "nearest" }); }
+  });
+
+  $("explore-run").addEventListener("change", e => { state.exploreRun = e.target.value; renderExplore(); });
+  $("group-view").addEventListener("click", e => { const b = e.target.closest("[data-movie]"); if (b) showMovie(Number(b.dataset.movie)); });
+  $("movie-view").addEventListener("click", e => {
+    const m = e.target.closest("[data-movie]");
+    if (m) { showMovie(Number(m.dataset.movie)); return; }
+    const p = e.target.closest("[data-prefix]");
+    if (p) setPrefix(p.dataset.prefix.split(".").map(Number));
+  });
+  setupSearch();
+
+  let timer = null;
+  window.addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(redrawCharts, 150); });
+  // measured in the next frame and only written when it changes, so the update cannot feed back into the observer
+  let headerH = 0;
+  new ResizeObserver(() => requestAnimationFrame(() => {
+    const h = $("topbar").offsetHeight;
+    if (h !== headerH) { headerH = h; document.documentElement.style.setProperty("--header-h", `${h}px`); }
+  })).observe($("topbar"));
+}
+
+async function init() {
+  if (!MANIFEST.length) {
+    showNotice("<b>Nenhum dado encontrado.</b> Abra <code>data/output/reports/index.html</code>, gerado por <code>python src/build_report.py</code>. Se você abriu o template em <code>src/</code>, ele não tem dados.");
+    return;
+  }
+  setupEvents();
+  const saved = store.get();
+  state.tab = location.hash === "#exploracao" ? "explore" : location.hash === "#avaliacao" ? "eval" : (saved.tab || "eval");
+  renderDatasetSeg();
+  await selectDataset(saved.dataset && MANIFEST.some(e => e.id === saved.dataset) ? saved.dataset : MANIFEST[0].id);
+}
+
+init().catch(e => showFatal(String(e && e.message || e), e && e.stack));
+</script>
+</body>
+</html>
